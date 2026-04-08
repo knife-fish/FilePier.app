@@ -1,0 +1,53 @@
+name: Release Build
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    name: Build
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set Default Scheme
+        run: |
+          scheme_list=$(xcodebuild -list -json | tr -d "\n")
+          default=$(echo $scheme_list | ruby -e "require 'json'; puts JSON.parse(STDIN.gets)['project']['targets'][0]")
+          echo $default | cat >default
+          echo Using default scheme: $default
+      - name: Build with xcodebuild
+        env:
+          scheme: ${{ 'default' }}
+        run: |
+          if [ $scheme = default ]; then scheme=$(cat default); fi
+          if [ "`ls -A | grep -i \\.xcworkspace\$`" ]; then filetype_parameter="workspace" && file_to_build="`ls -A | grep -i \\.xcworkspace\$`"; else filetype_parameter="project" && file_to_build="`ls -A | grep -i \\.xcodeproj\$`"; fi
+          file_to_build=`echo $file_to_build | awk '{$1=$1;print}'`
+          xcodebuild clean archive -scheme "$scheme" -"$filetype_parameter" "$file_to_build" -archivePath "./build/App.xcarchive" -configuration Release -destination "generic/platform=macOS" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" AD_HOC_CODE_SIGNING_ALLOWED=YES | xcpretty && exit ${PIPESTATUS[0]}
+
+      - name: Create DMG
+        run: |
+          brew install create-dmg
+          mkdir -p ./dist && cp -R ./build/App.xcarchive/Products/Applications/*.app ./dist/
+          app_name=$(find ./dist -maxdepth 1 -name "*.app" -type d -exec basename {} \;)
+          find "./dist/$app_name/Contents/Resources" -maxdepth 1 -type d -name "swift-*.bundle" -print0 | while IFS= read -r -d '' bundle; do
+            runtime_files=$(find "$bundle" -type f \
+              ! -path "$bundle/Contents/Info.plist" \
+              ! -path "$bundle/Contents/Resources/PrivacyInfo.xcprivacy" \
+              ! -path "$bundle/Contents/_CodeSignature/*" | wc -l | tr -d ' ')
+            if [ "$runtime_files" = "0" ]; then
+              rm -rf "$bundle"
+            fi
+          done
+          codesign --force --sign - --options runtime --entitlements FilePier/FilePier.entitlements "./dist/$app_name"
+          codesign --verify --deep --strict --verbose=2 "./dist/$app_name"
+          create-dmg --volname "${app_name%.app}" --window-pos 200 120 --window-size 600 400 --icon-size 100 --icon "$app_name" 175 120 --hide-extension "$app_name" --app-drop-link 425 120 "${app_name%.app}.dmg" "./dist/"
+          echo "DMG_PATH=${app_name%.app}.dmg" >> "$GITHUB_ENV"
+
+      - name: Upload to Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload ${{ github.event.release.tag_name }} "$DMG_PATH"

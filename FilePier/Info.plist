@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>FilePier</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSCreditsFile</key>
+	<string>Credits</string>
+	<key>NSHumanReadableCopyright</key>
+	<string></string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>FilePier uses the local network to connect to SFTP, WebDAV, and S3-compatible servers that you configure.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>FilePier Remote Drag Item</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.knifefish.filepier.remote-item</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.mime-type</key>
+				<string>application/vnd.org.knifefish.filepier.remote-item</string>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>FilePier Local File Drag Items</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.knifefish.filepier.local-file-items</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.mime-type</key>
+				<string>application/vnd.org.knifefish.filepier.local-file-items</string>
+			</dict>
+		</dict>
+	</array>
+	<key>FilePierIdentifierNamespace</key>
+	<string>org.knifefish.filepier</string>
+	<key>FilePierKeychainService</key>
+	<string>org.knifefish.FilePier.saved-sites</string>
+	<key>FilePierLocalDragItemTypeIdentifier</key>
+	<string>org.knifefish.filepier.local-file-items</string>
+	<key>FilePierRemoteDragCollectionTextPrefix</key>
+	<string>org.knifefish.filepier.remote-items:</string>
+	<key>FilePierRemoteDragItemTypeIdentifier</key>
+	<string>org.knifefish.filepier.remote-item</string>
+	<key>FilePierRemoteDragTextPrefix</key>
+	<string>org.knifefish.filepier.remote-item:</string>
+</dict>
+</plist>

@@ -1,0 +1,632 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		8A1E6B4F2D114F329A0AF001 /* Citadel in Frameworks */ = {isa = PBXBuildFile; productRef = 8A1E6B4E2D114F329A0AF001 /* Citadel */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		0D0A22ED2F864EF6005C0D33 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0D0A22D72F864EF5005C0D33 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0D0A22DE2F864EF5005C0D33;
+			remoteInfo = FilePier;
+		};
+		0D0A22F72F864EF6005C0D33 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0D0A22D72F864EF5005C0D33 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0D0A22DE2F864EF5005C0D33;
+			remoteInfo = FilePier;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		0D0A22DF2F864EF5005C0D33 /* FilePier.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FilePier.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0D0A22EC2F864EF6005C0D33 /* FilePierTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FilePierTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0D0A22F62F864EF6005C0D33 /* FilePierUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FilePierUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		8A2B7C1D2E3F4A5B6C7D8E9F /* Exceptions for "FilePier" folder in "FilePier" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 0D0A22DE2F864EF5005C0D33 /* FilePier */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		0D0A22E12F864EF5005C0D33 /* FilePier */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				8A2B7C1D2E3F4A5B6C7D8E9F /* Exceptions for "FilePier" folder in "FilePier" target */,
+			);
+			path = FilePier;
+			sourceTree = "<group>";
+		};
+		0D0A22EF2F864EF6005C0D33 /* FilePierTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = FilePierTests;
+			sourceTree = "<group>";
+		};
+		0D0A22F92F864EF6005C0D33 /* FilePierUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = FilePierUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		0D0A22DC2F864EF5005C0D33 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8A1E6B4F2D114F329A0AF001 /* Citadel in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0D0A22E92F864EF6005C0D33 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0D0A22F32F864EF6005C0D33 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0D0A22D62F864EF5005C0D33 = {
+			isa = PBXGroup;
+			children = (
+				0D0A22E12F864EF5005C0D33 /* FilePier */,
+				0D0A22EF2F864EF6005C0D33 /* FilePierTests */,
+				0D0A22F92F864EF6005C0D33 /* FilePierUITests */,
+				0D0A22E02F864EF5005C0D33 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		0D0A22E02F864EF5005C0D33 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				0D0A22DF2F864EF5005C0D33 /* FilePier.app */,
+				0D0A22EC2F864EF6005C0D33 /* FilePierTests.xctest */,
+				0D0A22F62F864EF6005C0D33 /* FilePierUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0D0A22DE2F864EF5005C0D33 /* FilePier */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0D0A23002F864EF6005C0D33 /* Build configuration list for PBXNativeTarget "FilePier" */;
+			buildPhases = (
+				0D0A22DB2F864EF5005C0D33 /* Sources */,
+				0D0A22DC2F864EF5005C0D33 /* Frameworks */,
+				0D0A22DD2F864EF5005C0D33 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				0D0A22E12F864EF5005C0D33 /* FilePier */,
+			);
+			name = FilePier;
+			packageProductDependencies = (
+				8A1E6B4E2D114F329A0AF001 /* Citadel */,
+			);
+			productName = FilePier;
+			productReference = 0D0A22DF2F864EF5005C0D33 /* FilePier.app */;
+			productType = "com.apple.product-type.application";
+		};
+		0D0A22EB2F864EF6005C0D33 /* FilePierTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0D0A23032F864EF6005C0D33 /* Build configuration list for PBXNativeTarget "FilePierTests" */;
+			buildPhases = (
+				0D0A22E82F864EF6005C0D33 /* Sources */,
+				0D0A22E92F864EF6005C0D33 /* Frameworks */,
+				0D0A22EA2F864EF6005C0D33 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0D0A22EE2F864EF6005C0D33 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0D0A22EF2F864EF6005C0D33 /* FilePierTests */,
+			);
+			name = FilePierTests;
+			packageProductDependencies = (
+			);
+			productName = FilePierTests;
+			productReference = 0D0A22EC2F864EF6005C0D33 /* FilePierTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		0D0A22F52F864EF6005C0D33 /* FilePierUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0D0A23062F864EF6005C0D33 /* Build configuration list for PBXNativeTarget "FilePierUITests" */;
+			buildPhases = (
+				0D0A22F22F864EF6005C0D33 /* Sources */,
+				0D0A22F32F864EF6005C0D33 /* Frameworks */,
+				0D0A22F42F864EF6005C0D33 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0D0A22F82F864EF6005C0D33 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0D0A22F92F864EF6005C0D33 /* FilePierUITests */,
+			);
+			name = FilePierUITests;
+			packageProductDependencies = (
+			);
+			productName = FilePierUITests;
+			productReference = 0D0A22F62F864EF6005C0D33 /* FilePierUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		0D0A22D72F864EF5005C0D33 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2640;
+				LastUpgradeCheck = 2640;
+				TargetAttributes = {
+					0D0A22DE2F864EF5005C0D33 = {
+						CreatedOnToolsVersion = 26.4;
+					};
+					0D0A22EB2F864EF6005C0D33 = {
+						CreatedOnToolsVersion = 26.4;
+						TestTargetID = 0D0A22DE2F864EF5005C0D33;
+					};
+					0D0A22F52F864EF6005C0D33 = {
+						CreatedOnToolsVersion = 26.4;
+						TestTargetID = 0D0A22DE2F864EF5005C0D33;
+					};
+				};
+			};
+			buildConfigurationList = 0D0A22DA2F864EF5005C0D33 /* Build configuration list for PBXProject "FilePier" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				"zh-Hans",
+			);
+			mainGroup = 0D0A22D62F864EF5005C0D33;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				8A1E6B4D2D114F329A0AF001 /* XCRemoteSwiftPackageReference "Citadel" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 0D0A22E02F864EF5005C0D33 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				0D0A22DE2F864EF5005C0D33 /* FilePier */,
+				0D0A22EB2F864EF6005C0D33 /* FilePierTests */,
+				0D0A22F52F864EF6005C0D33 /* FilePierUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		0D0A22DD2F864EF5005C0D33 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0D0A22EA2F864EF6005C0D33 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0D0A22F42F864EF6005C0D33 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		0D0A22DB2F864EF5005C0D33 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0D0A22E82F864EF6005C0D33 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0D0A22F22F864EF6005C0D33 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0D0A22EE2F864EF6005C0D33 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0D0A22DE2F864EF5005C0D33 /* FilePier */;
+			targetProxy = 0D0A22ED2F864EF6005C0D33 /* PBXContainerItemProxy */;
+		};
+		0D0A22F82F864EF6005C0D33 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0D0A22DE2F864EF5005C0D33 /* FilePier */;
+			targetProxy = 0D0A22F72F864EF6005C0D33 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		0D0A22FE2F864EF6005C0D33 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 9BD666WHWR;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		0D0A22FF2F864EF6005C0D33 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 9BD666WHWR;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		0D0A23012F864EF6005C0D33 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = FilePier/FilePier.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 20260807;
+				DEVELOPMENT_TEAM = 9BD666WHWR;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FilePier/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = FilePier;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				MARKETING_VERSION = 1.0.0;
+				OTHER_LDFLAGS = "$(inherited)";
+				PRODUCT_BUNDLE_IDENTIFIER = org.knifefish.FilePier;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		0D0A23022F864EF6005C0D33 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = FilePier/FilePier.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 20260807;
+				DEVELOPMENT_TEAM = 9BD666WHWR;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FilePier/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = FilePier;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				MARKETING_VERSION = 1.0.0;
+				OTHER_LDFLAGS = "$(inherited)";
+				PRODUCT_BUNDLE_IDENTIFIER = org.knifefish.FilePier;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		0D0A23042F864EF6005C0D33 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9BD666WHWR;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.knifefish.FilePierTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FilePier.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FilePier";
+			};
+			name = Debug;
+		};
+		0D0A23052F864EF6005C0D33 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9BD666WHWR;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.knifefish.FilePierTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FilePier.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FilePier";
+			};
+			name = Release;
+		};
+		0D0A23072F864EF6005C0D33 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9BD666WHWR;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.knifefish.FilePierUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = FilePier;
+			};
+			name = Debug;
+		};
+		0D0A23082F864EF6005C0D33 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9BD666WHWR;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.knifefish.FilePierUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = FilePier;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0D0A22DA2F864EF5005C0D33 /* Build configuration list for PBXProject "FilePier" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0D0A22FE2F864EF6005C0D33 /* Debug */,
+				0D0A22FF2F864EF6005C0D33 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0D0A23002F864EF6005C0D33 /* Build configuration list for PBXNativeTarget "FilePier" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0D0A23012F864EF6005C0D33 /* Debug */,
+				0D0A23022F864EF6005C0D33 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0D0A23032F864EF6005C0D33 /* Build configuration list for PBXNativeTarget "FilePierTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0D0A23042F864EF6005C0D33 /* Debug */,
+				0D0A23052F864EF6005C0D33 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0D0A23062F864EF6005C0D33 /* Build configuration list for PBXNativeTarget "FilePierUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0D0A23072F864EF6005C0D33 /* Debug */,
+				0D0A23082F864EF6005C0D33 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		8A1E6B4D2D114F329A0AF001 /* XCRemoteSwiftPackageReference "Citadel" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/orlandos-nl/Citadel.git";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		8A1E6B4E2D114F329A0AF001 /* Citadel */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8A1E6B4D2D114F329A0AF001 /* XCRemoteSwiftPackageReference "Citadel" */;
+			productName = Citadel;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 0D0A22D72F864EF5005C0D33 /* Project object */;
+}
