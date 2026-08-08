@@ -2749,9 +2749,14 @@ private struct ConnectionSheet: View {
         panel.resolvesAliases = false
         guard panel.runModal() == .OK, let selectedURL = panel.url else { return nil }
         // Return the picker result untouched. In particular, do not canonicalize it
-        // to a link target while the user is selecting a key.
+        // to a link target while the user is selecting a key. NSOpenPanel can
+        // nevertheless return the target after browsing through ~/.ssh, so
+        // restore that user-facing link spelling before persisting the path.
+        let persistedPath = sshKeyPathPreservingHomeSSHLink(for: selectedURL)
         return SelectedKeyFile(
-            path: selectedURL.path(percentEncoded: false),
+            path: persistedPath,
+            // The picker-owned URL is the one macOS grants access to. The
+            // persisted path above is deliberately independent of it.
             bookmarkData: try? selectedURL.bookmarkData(
                 options: .withSecurityScope,
                 includingResourceValuesForKeys: nil,

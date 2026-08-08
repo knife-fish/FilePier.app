@@ -1422,6 +1422,39 @@ struct FilePierTests {
         try? FileManager.default.removeItem(at: baseURL)
     }
 
+    @Test func sshKeyPathRestoresHomeSSHLinkWhenPickerReturnsTargetPath() throws {
+        let baseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let homeURL = baseURL.appendingPathComponent("Home", isDirectory: true)
+        let targetDirectoryURL = baseURL.appendingPathComponent("Keys", isDirectory: true)
+        let sshDirectoryURL = homeURL.appendingPathComponent(".ssh", isDirectory: true)
+        let keyURL = targetDirectoryURL.appendingPathComponent("deploy.pem")
+
+        try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: targetDirectoryURL, withIntermediateDirectories: true)
+        try Data("private key".utf8).write(to: keyURL)
+        try FileManager.default.createSymbolicLink(at: sshDirectoryURL, withDestinationURL: targetDirectoryURL)
+
+        let persistedPath = sshKeyPathPreservingHomeSSHLink(
+            for: keyURL,
+            homeDirectoryURL: homeURL
+        )
+
+        #expect(persistedPath == sshDirectoryURL.appendingPathComponent("deploy.pem").path(percentEncoded: false))
+        #expect(persistedPath != keyURL.path(percentEncoded: false))
+
+        try? FileManager.default.removeItem(at: baseURL)
+    }
+
+    @Test func expandsTildeAgainstLoginHomeInsteadOfSandboxContainer() {
+        #expect(
+            expandingCurrentUserHomeDirectory(
+                in: "~/.ssh/deploy.pem",
+                homeDirectoryPath: "/Users/demo"
+            ) == "/Users/demo/.ssh/deploy.pem"
+        )
+    }
+
     @Test func connectRemoteSessionFallsBackToStoredPassword() async throws {
         let baseURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

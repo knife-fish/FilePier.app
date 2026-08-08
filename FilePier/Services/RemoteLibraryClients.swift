@@ -21,25 +21,32 @@ enum RemoteClientError: LocalizedError {
     }
 }
 
-private func readSecurityScopedTextFile(at url: URL, bookmarkData: Data? = nil) throws -> String {
-    var isBookmarkStale = false
-    let scopeURL = bookmarkData.flatMap {
-        try? URL(
-            resolvingBookmarkData: $0,
-            options: [.withSecurityScope, .withoutUI],
-            relativeTo: nil,
-            bookmarkDataIsStale: &isBookmarkStale
-        )
-    } ?? url
-    let didStartAccess = scopeURL.startAccessingSecurityScopedResource()
-    defer {
-        if didStartAccess {
-            scopeURL.stopAccessingSecurityScopedResource()
-        }
+private func readSecurityScopedTextFile(at selectedURL: URL, bookmarkData: Data? = nil) throws -> String {
+    guard let bookmarkData else {
+        return try String(contentsOf: selectedURL, encoding: .utf8)
     }
-    // Keep the stored/selected spelling for the actual read. The bookmark only
-    // supplies sandbox authorization, including when an ancestor is a link.
-    return try String(contentsOf: url, encoding: .utf8)
+
+    var isBookmarkStale = false
+    let scopeURL = try URL(
+        resolvingBookmarkData: bookmarkData,
+        options: [.withSecurityScope, .withoutUI],
+        relativeTo: nil,
+        bookmarkDataIsStale: &isBookmarkStale
+    )
+    let didStartAccess = scopeURL.startAccessingSecurityScopedResource()
+    guard didStartAccess else {
+        throw RemoteClientError.requestFailed(
+            details: "FilePier no longer has permission to read the selected SSH key. Choose the key file again to grant access."
+        )
+    }
+    defer {
+        scopeURL.stopAccessingSecurityScopedResource()
+    }
+
+    // Security-scoped bookmarks resolve a symbolic-link selection to the
+    // authorized target URL. Reading that URL is required by App Sandbox;
+    // `selectedURL` is retained separately for display and persistence.
+    return try String(contentsOf: scopeURL, encoding: .utf8)
 }
 
 struct LibraryBackedSFTPRemoteClient: RemoteClient {
@@ -2930,7 +2937,7 @@ private final class CitadelSFTPSession: @unchecked Sendable {
             throw RemoteClientError.requestFailed(details: "Select a private key file for SSH key authentication.")
         }
 
-        let keyURL = URL(fileURLWithPath: NSString(string: trimmedPath).expandingTildeInPath)
+        let keyURL = URL(fileURLWithPath: expandingCurrentUserHomeDirectory(in: trimmedPath))
         // Access the selected URL itself. Do not resolve a link before reading: its
         // target may be outside the security scope granted by the file picker.
         let keyContents = try readSecurityScopedTextFile(
@@ -3120,7 +3127,7 @@ private final class CitadelSFTPSession: @unchecked Sendable {
         let candidateURLs: [(url: URL, bookmarkData: Data?)] = [
             config.publicKeyPath.map { path in
                 (
-                    URL(fileURLWithPath: NSString(string: path).expandingTildeInPath),
+                    URL(fileURLWithPath: expandingCurrentUserHomeDirectory(in: path)),
                     config.publicKeyBookmarkData
                 )
             },

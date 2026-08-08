@@ -83,7 +83,18 @@ private struct StoredServerProfile: Codable {
     }
 
     var serverProfile: ServerProfile {
-        ServerProfile(
+        let privateKeyPath = privateKeyPath.map {
+            sshKeyPathPreservingHomeSSHLink(
+                for: URL(fileURLWithPath: expandingCurrentUserHomeDirectory(in: $0))
+            )
+        }
+        let publicKeyPath = publicKeyPath.map {
+            sshKeyPathPreservingHomeSSHLink(
+                for: URL(fileURLWithPath: expandingCurrentUserHomeDirectory(in: $0))
+            )
+        }
+
+        return ServerProfile(
             id: id,
             name: name,
             endpoint: endpoint,

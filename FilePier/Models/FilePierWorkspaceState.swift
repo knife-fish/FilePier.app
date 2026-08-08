@@ -4,6 +4,79 @@ import Combine
 import Darwin
 import Network
 
+/// Expands `~/…` against the login account's home directory instead of the
+/// App Sandbox container home directory.
+func loginAccountHomeDirectoryPath() -> String? {
+    guard let account = getpwuid(getuid()), let directory = account.pointee.pw_dir else {
+        return nil
+    }
+    return String(cString: directory)
+}
+
+func expandingCurrentUserHomeDirectory(in path: String, homeDirectoryPath: String? = nil) -> String {
+    guard path == "~" || path.hasPrefix("~/") else { return path }
+    let resolvedHomeDirectory = homeDirectoryPath ?? loginAccountHomeDirectoryPath()
+    guard let resolvedHomeDirectory else { return path }
+    return resolvedHomeDirectory + String(path.dropFirst())
+}
+
+/// Returns the spelling that reaches a selected SSH key through `~/.ssh` when
+/// that directory is a symbolic link. `NSOpenPanel` can return the link target
+/// after navigating through the link, which would otherwise persist a path
+/// outside the sandbox scope the user intended to grant.
+func sshKeyPathPreservingHomeSSHLink(
+    for selectedURL: URL,
+    homeDirectoryURL: URL? = nil
+) -> String {
+    let selectedURL = selectedURL.standardizedFileURL
+    let selectedPath = selectedURL.path(percentEncoded: false)
+    let homeDirectoryURL = homeDirectoryURL ?? loginAccountHomeDirectoryPath().map(URL.init(fileURLWithPath:))
+        ?? FileManager.default.homeDirectoryForCurrentUser
+    let sshDirectoryURL = homeDirectoryURL
+        .appendingPathComponent(".ssh", isDirectory: true)
+        .standardizedFileURL
+
+    guard
+        let destination = try? FileManager.default.destinationOfSymbolicLink(
+            atPath: sshDirectoryURL.path(percentEncoded: false)
+        )
+    else {
+        return selectedPath
+    }
+
+    let targetURL: URL
+    if destination.hasPrefix("/") {
+        targetURL = URL(fileURLWithPath: destination, isDirectory: true)
+    } else {
+        targetURL = sshDirectoryURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(destination, isDirectory: true)
+    }
+
+    let resolvedTargetComponents = targetURL
+        .resolvingSymlinksInPath()
+        .standardizedFileURL
+        .pathComponents
+    let resolvedSelectedComponents = selectedURL
+        .resolvingSymlinksInPath()
+        .standardizedFileURL
+        .pathComponents
+
+    guard
+        resolvedSelectedComponents.starts(with: resolvedTargetComponents),
+        resolvedSelectedComponents.count > resolvedTargetComponents.count
+    else {
+        return selectedPath
+    }
+
+    return resolvedSelectedComponents
+        .dropFirst(resolvedTargetComponents.count)
+        .reduce(sshDirectoryURL) { partialURL, component in
+            partialURL.appendingPathComponent(component)
+        }
+        .path(percentEncoded: false)
+}
+
 struct ServerProfile: Identifiable, Hashable {
     let id: UUID
     let name: String
@@ -2239,7 +2312,7 @@ final class FilePierWorkspaceState: ObservableObject {
         guard !trimmed.isEmpty else { return nil }
         // `standardizedFileURL` normalizes spelling only; unlike
         // `resolvingSymlinksInPath()`, it preserves a selected link path.
-        return URL(fileURLWithPath: NSString(string: trimmed).expandingTildeInPath)
+        return URL(fileURLWithPath: expandingCurrentUserHomeDirectory(in: trimmed))
             .standardizedFileURL
             .path(percentEncoded: false)
     }
