@@ -94,6 +94,38 @@ struct LocalFileTransferService {
         return destinationURL
     }
 
+    func createDirectory(
+        named proposedName: String,
+        in directoryURL: URL,
+        conflictPolicy: TransferConflictPolicy
+    ) throws -> URL {
+        let sanitizedName = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sanitizedName.isEmpty, !sanitizedName.contains("/") else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
+
+        let destinationURL = directoryURL.appendingPathComponent(sanitizedName, isDirectory: true)
+        if FileManager.default.fileExists(atPath: destinationURL.path(percentEncoded: false)) {
+            switch conflictPolicy {
+            case .rename:
+                return try createDirectory(named: sanitizedName, in: directoryURL, uniquingIfNeeded: true)
+            case .overwrite:
+                var isDirectory: ObjCBool = false
+                FileManager.default.fileExists(
+                    atPath: destinationURL.path(percentEncoded: false),
+                    isDirectory: &isDirectory
+                )
+                if isDirectory.boolValue {
+                    return destinationURL
+                }
+                try FileManager.default.removeItem(at: destinationURL)
+            }
+        }
+
+        try FileManager.default.createDirectory(at: destinationURL, withIntermediateDirectories: false)
+        return destinationURL
+    }
+
     func makeUniqueDestinationURL(forProposedName proposedName: String, in directoryURL: URL) -> URL {
         uniqueDestinationURL(forProposedName: proposedName, in: directoryURL)
     }
