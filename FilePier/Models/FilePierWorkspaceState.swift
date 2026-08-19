@@ -3215,7 +3215,7 @@ final class FilePierWorkspaceState: ObservableObject {
                         let destinationURL = try localFileTransfer.createDirectory(
                             named: item.name,
                             in: directoryURL,
-                            uniquingIfNeeded: true
+                            conflictPolicy: resolvedConflictPolicy
                         )
                         recordSuccess(
                             name: destinationURL.lastPathComponent,

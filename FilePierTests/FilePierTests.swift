@@ -2421,6 +2421,51 @@ struct FilePierTests {
         try? FileManager.default.removeItem(at: baseURL)
     }
 
+    @Test func downloadFolderConflictCanOverwriteExistingFolder() async throws {
+        let baseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let localURL = baseURL.appendingPathComponent("Local", isDirectory: true)
+        let remoteURL = baseURL.appendingPathComponent("Remote", isDirectory: true)
+        let existingFolderURL = localURL.appendingPathComponent("Logs", isDirectory: true)
+        let remoteFolderURL = remoteURL.appendingPathComponent("Logs", isDirectory: true)
+        let remoteFileURL = remoteFolderURL.appendingPathComponent("app.log")
+        let preservedLocalFileURL = existingFolderURL.appendingPathComponent("keep-me.log")
+
+        try FileManager.default.createDirectory(at: existingFolderURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: remoteFolderURL, withIntermediateDirectories: true)
+        try "old log".write(to: existingFolderURL.appendingPathComponent("app.log"), atomically: true, encoding: .utf8)
+        try "keep me".write(to: preservedLocalFileURL, atomically: true, encoding: .utf8)
+        try "remote log".write(to: remoteFileURL, atomically: true, encoding: .utf8)
+
+        let state = await MainActor.run {
+            FilePierWorkspaceState(
+                localFileBrowser: LocalFileBrowserService(),
+                localFileTransfer: LocalFileTransferService(),
+                initialLocalDirectoryURL: localURL,
+                initialRemoteDirectoryURL: remoteURL
+            )
+        }
+
+        await MainActor.run {
+            state.focusedPane = .remote
+            state.selectRemoteItem(id: remoteFolderURL.path(percentEncoded: false))
+            state.copyFocusedSelectionToOtherPane()
+        }
+
+        await MainActor.run {
+            #expect(state.transferConflictResolutionRequest?.conflictingNames == ["Logs"])
+            state.resolveTransferConflict(with: .overwrite)
+        }
+
+        try await eventually {
+            (try? String(contentsOf: existingFolderURL.appendingPathComponent("app.log"), encoding: .utf8)) == "remote log" &&
+            (try? String(contentsOf: preservedLocalFileURL, encoding: .utf8)) == "keep me" &&
+            !FileManager.default.fileExists(atPath: localURL.appendingPathComponent("Logs 2", isDirectory: true).path)
+        }
+
+        try? FileManager.default.removeItem(at: baseURL)
+    }
+
     @Test func runningUploadCanBeCancelled() async throws {
         let baseURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
