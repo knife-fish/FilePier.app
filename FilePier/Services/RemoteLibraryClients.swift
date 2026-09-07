@@ -50,6 +50,10 @@ private func readSecurityScopedTextFile(at selectedURL: URL, bookmarkData: Data?
 }
 
 struct LibraryBackedSFTPRemoteClient: RemoteClient {
+    // SFTP reads through FileHandle inside the caller's security scope. Keeping
+    // the original path also keeps the persistent resume identity stable.
+    var requiresUploadStaging: Bool { false }
+
     private let config: RemoteConnectionConfig
     private let session: CitadelSFTPSession
 
@@ -124,9 +128,8 @@ struct LibraryBackedSFTPRemoteClient: RemoteClient {
             guard !existingItem.isDirectory else {
                 throw CocoaError(.fileWriteFileExists)
             }
-            try session.deleteItem(at: existingItem.pathDescription, isDirectory: false, recursively: false)
         }
-        try session.uploadItem(at: localURL, toPath: destinationPath, progress: progress, isCancelled: isCancelled)
+        try session.uploadItem(at: localURL, toPath: destinationPath, overwrite: conflictPolicy == .overwrite, progress: progress, isCancelled: isCancelled)
         return RemoteUploadResult(
             remoteItemID: destinationPath,
             destinationName: destinationName,
@@ -148,10 +151,7 @@ struct LibraryBackedSFTPRemoteClient: RemoteClient {
             in: localDirectoryURL,
             conflictPolicy: conflictPolicy
         )
-        if conflictPolicy == .overwrite, FileManager.default.fileExists(atPath: destinationURL.path(percentEncoded: false)) {
-            try localFileTransfer.deleteItem(at: destinationURL)
-        }
-        try session.downloadItem(at: remotePath, to: destinationURL, progress: progress, isCancelled: isCancelled)
+        try session.downloadItem(at: remotePath, to: destinationURL, overwrite: conflictPolicy == .overwrite, progress: progress, isCancelled: isCancelled)
         return LocalFileTransferResult(
             sourceURL: URL(fileURLWithPath: remotePath),
             destinationURL: destinationURL,
@@ -866,7 +866,7 @@ final class S3HTTPSession: NSObject {
             progress: progress,
             destinationURL: nil
         )
-        let session = URLSession(configuration: urlSessionConfiguration, delegate: delegate, delegateQueue: nil)
+        let session = URLSession(configuration: transferSessionConfiguration(urlSessionConfiguration), delegate: delegate, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
 
         request.httpMethod = "PUT"
@@ -902,7 +902,7 @@ final class S3HTTPSession: NSObject {
             progress: progress,
             destinationURL: destinationURL
         )
-        let session = URLSession(configuration: urlSessionConfiguration, delegate: delegate, delegateQueue: nil)
+        let session = URLSession(configuration: transferSessionConfiguration(urlSessionConfiguration), delegate: delegate, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
 
         let task = session.downloadTask(with: request)
@@ -1201,7 +1201,7 @@ final class S3HTTPSession: NSObject {
             date: now()
         )
         let delegate = BlockingURLSessionDelegate(progress: nil, destinationURL: nil)
-        let session = URLSession(configuration: urlSessionConfiguration, delegate: delegate, delegateQueue: nil)
+        let session = URLSession(configuration: transferSessionConfiguration(urlSessionConfiguration), delegate: delegate, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
 
         let task = session.dataTask(with: request)
@@ -1235,7 +1235,7 @@ final class S3HTTPSession: NSObject {
                 break
             }
 
-            if Date() >= deadline {
+            if timeout == Self.fileTransferTimeout ? delegate.activity.hasExpired(after: timeout) : Date() >= deadline {
                 task.cancel()
                 throw RemoteClientError.operationTimedOut(operation: operationDescription, seconds: timeout)
             }
@@ -1691,7 +1691,7 @@ final class WebDAVHTTPSession: NSObject {
         request.setValue(String(contentLength), forHTTPHeaderField: "Content-Length")
 
         let delegate = BlockingURLSessionDelegate(progress: progress, destinationURL: nil)
-        let session = URLSession(configuration: urlSessionConfiguration, delegate: delegate, delegateQueue: nil)
+        let session = URLSession(configuration: transferSessionConfiguration(urlSessionConfiguration), delegate: delegate, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
 
         let task = session.uploadTask(with: request, fromFile: localURL)
@@ -1717,7 +1717,7 @@ final class WebDAVHTTPSession: NSObject {
         let request = try authorizedRequest(url: targetURL, method: "GET")
 
         let delegate = BlockingURLSessionDelegate(progress: progress, destinationURL: destinationURL)
-        let session = URLSession(configuration: urlSessionConfiguration, delegate: delegate, delegateQueue: nil)
+        let session = URLSession(configuration: transferSessionConfiguration(urlSessionConfiguration), delegate: delegate, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
 
         let task = session.downloadTask(with: request)
@@ -1785,7 +1785,7 @@ final class WebDAVHTTPSession: NSObject {
         _ = try validatedEndpointURL()
         let request = try authorizedRequest(url: url, method: method, headers: headers, bodyData: bodyData)
         let delegate = BlockingURLSessionDelegate(progress: nil, destinationURL: nil)
-        let session = URLSession(configuration: urlSessionConfiguration, delegate: delegate, delegateQueue: nil)
+        let session = URLSession(configuration: transferSessionConfiguration(urlSessionConfiguration), delegate: delegate, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
 
         let task = session.dataTask(with: request)
@@ -1821,7 +1821,7 @@ final class WebDAVHTTPSession: NSObject {
                 break
             }
 
-            if Date() >= deadline {
+            if timeout == Self.fileTransferTimeout ? delegate.activity.hasExpired(after: timeout) : Date() >= deadline {
                 task.cancel()
                 throw RemoteClientError.operationTimedOut(operation: operationDescription, seconds: timeout)
             }
@@ -1984,6 +1984,7 @@ private enum S3RootListing {
 
 private final class BlockingURLSessionDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate, URLSessionDownloadDelegate {
     let completionSemaphore = DispatchSemaphore(value: 0)
+    let activity = TransferActivityMonitor()
     let progress: (@Sendable (TransferProgressSnapshot) -> Void)?
     let destinationURL: URL?
 
@@ -2056,21 +2057,13 @@ private final class BlockingURLSessionDelegate: NSObject, URLSessionTaskDelegate
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        progress?(
-            .init(
-                completedByteCount: totalBytesWritten,
-                totalByteCount: totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : nil
-            )
-        )
+        activity.report(.init(completedByteCount: totalBytesWritten,
+                              totalByteCount: totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : nil), to: progress)
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
-        progress?(
-            .init(
-                completedByteCount: totalBytesSent,
-                totalByteCount: totalBytesExpectedToSend > 0 ? totalBytesExpectedToSend : nil
-            )
-        )
+        activity.report(.init(completedByteCount: totalBytesSent,
+                              totalByteCount: totalBytesExpectedToSend > 0 ? totalBytesExpectedToSend : nil), to: progress)
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
@@ -2598,102 +2591,160 @@ private final class CitadelSFTPSession: @unchecked Sendable {
     func uploadItem(
         at localURL: URL,
         toPath remotePath: String,
+        overwrite: Bool,
         progress: (@Sendable (TransferProgressSnapshot) -> Void)?,
         isCancelled: (@Sendable () -> Bool)?
     ) throws {
-        let totalByteCount = try localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize.map(Int64.init)
-        try withConnectedSFTP(timeout: Self.fileTransferTimeout, operationDescription: "Uploading \(localURL.lastPathComponent)") { sftp in
-            let remoteFile = try await sftp.openFile(
-                filePath: remotePath,
-                flags: [.write, .create, .truncate]
-            )
-            defer {
-                Task.detached {
-                    try? await remoteFile.close()
-                }
-            }
-
+        let identity = try ResumableTransferIdentity.localFile(localURL)
+        let remoteDirectory = (remotePath as NSString).deletingLastPathComponent
+        let partialPath = (remoteDirectory as NSString).appendingPathComponent(
+            ResumableTransferIdentity.partialName([remotePath, identity]))
+        try withTransferSFTP(operationDescription: "Uploading \(localURL.lastPathComponent)", isCancelled: isCancelled) { sftp, activity in
+            let lease = try TransferDestinationLease.acquire("upload:\(self.config.normalizedHost):\(self.config.port):\(self.config.username):\(remotePath)")
+            defer { lease.release() }
             let localHandle = try FileHandle(forReadingFrom: localURL)
-            defer {
-                try? localHandle.close()
-            }
-
-            let chunkSize = 64 * 1024
-            var offset: UInt64 = 0
-            var completedByteCount: Int64 = 0
-            progress?(.init(completedByteCount: 0, totalByteCount: totalByteCount))
-
-            while true {
-                if isCancelled?() == true {
-                    throw CancellationError()
+            defer { try? localHandle.close() }
+            let total = try localHandle.seekToEnd()
+            try await sftp.withFile(filePath: partialPath, flags: [.read, .write, .create]) { remoteFile in
+                let existingSize = try await remoteFile.readAttributes().size ?? 0
+                let offset = try await ResumableTransferCopy.validatedOffset(
+                    existingSize: existingSize, totalSize: total,
+                    source: { offset, count in
+                        try localHandle.seek(toOffset: offset)
+                        return try localHandle.read(upToCount: count) ?? Data()
+                    },
+                    destination: { offset, count in
+                        let buffer = try await remoteFile.read(from: offset, length: UInt32(count))
+                        return buffer.withUnsafeReadableBytes { Data($0) }
+                    })
+                if offset != existingSize {
+                    try await remoteFile.setAttributes(to: .init(size: offset))
                 }
-                let data = try localHandle.read(upToCount: chunkSize) ?? Data()
-                if data.isEmpty { break }
-
-                var buffer = ByteBufferAllocator().buffer(capacity: data.count)
-                buffer.writeBytes(data)
-                try await remoteFile.write(buffer, at: offset)
-
-                offset += UInt64(data.count)
-                completedByteCount += Int64(data.count)
-                progress?(.init(completedByteCount: completedByteCount, totalByteCount: totalByteCount))
+                try await ResumableTransferCopy.copy(from: offset, totalSize: total,
+                    activity: activity, progress: progress, isCancelled: isCancelled,
+                    read: { offset, count in
+                        try localHandle.seek(toOffset: offset)
+                        return try localHandle.read(upToCount: count) ?? Data()
+                    }, write: { offset, data in
+                        var buffer = ByteBufferAllocator().buffer(capacity: data.count)
+                        buffer.writeBytes(data)
+                        try await remoteFile.write(buffer, at: offset)
+                    })
+                guard try ResumableTransferIdentity.localFile(localURL) == identity else {
+                    throw RemoteClientError.requestFailed(details: "Source file changed during upload. Retry to transfer the new version.")
+                }
             }
-
-            if completedByteCount == 0 {
-                progress?(.init(completedByteCount: 0, totalByteCount: totalByteCount ?? 0))
+            try Task.checkCancellation()
+            if isCancelled?() == true { throw CancellationError() }
+            if overwrite {
+                // SFTP v3 rename does not overwrite. Only remove the old file
+                // after the replacement is complete and its handle is closed.
+                let siblings = try await sftp.listDirectory(atPath: (remotePath as NSString).deletingLastPathComponent)
+                if let existing = siblings.flatMap(\.components).first(where: { $0.filename == (remotePath as NSString).lastPathComponent }) {
+                    guard existing.attributes.permissions.map({ $0 & 0o170000 != 0o040000 }) == true else {
+                        throw CocoaError(.fileWriteFileExists)
+                    }
+                    try await sftp.remove(at: remotePath)
+                }
             }
+            try await sftp.rename(at: partialPath, to: remotePath)
         }
     }
 
     func downloadItem(
         at remotePath: String,
         to destinationURL: URL,
+        overwrite: Bool,
         progress: (@Sendable (TransferProgressSnapshot) -> Void)?,
         isCancelled: (@Sendable () -> Bool)?
     ) throws {
-        do {
-            try withConnectedSFTP(timeout: Self.fileTransferTimeout, operationDescription: "Downloading \(destinationURL.lastPathComponent)") { sftp in
-                let remoteFile = try await sftp.openFile(filePath: remotePath, flags: .read)
-                defer {
-                    Task.detached {
-                        try? await remoteFile.close()
-                    }
-                }
-
+        try withTransferSFTP(operationDescription: "Downloading \(destinationURL.lastPathComponent)", isCancelled: isCancelled) { sftp, activity in
+            let lease = try TransferDestinationLease.acquire("download:\(destinationURL.standardizedFileURL.path)")
+            defer { lease.release() }
+            let partialURL = try await sftp.withFile(filePath: remotePath, flags: .read) { remoteFile in
                 let attributes = try await remoteFile.readAttributes()
-                let totalByteCount = attributes.size.map(Int64.init)
-                FileManager.default.createFile(atPath: destinationURL.path(percentEncoded: false), contents: nil)
-                let outputHandle = try FileHandle(forWritingTo: destinationURL)
-                defer {
-                    try? outputHandle.close()
+                guard let total = attributes.size else {
+                    throw RemoteClientError.requestFailed(details: "The SFTP server did not return the file size.")
                 }
-
-                let chunkSize: UInt32 = 64 * 1024
-                var offset: UInt64 = 0
-                var completedByteCount: Int64 = 0
-                progress?(.init(completedByteCount: 0, totalByteCount: totalByteCount))
-
-                while true {
-                    if isCancelled?() == true {
-                        throw CancellationError()
+                let modified = attributes.accessModificationTime?.modificationTime
+                // Without a source version, do not reuse an earlier partial file.
+                let version = modified.map { String($0.timeIntervalSince1970) } ?? UUID().uuidString
+                let name = ResumableTransferIdentity.partialName([
+                    self.config.normalizedHost, String(self.config.port), self.config.username,
+                    remotePath, destinationURL.path, String(total), version
+                ])
+                let stagingURL = destinationURL.deletingLastPathComponent().appendingPathComponent(name)
+                if !FileManager.default.fileExists(atPath: stagingURL.path) {
+                    guard FileManager.default.createFile(atPath: stagingURL.path, contents: nil) else {
+                        throw CocoaError(.fileWriteUnknown)
                     }
-                    let buffer = try await remoteFile.read(from: offset, length: chunkSize)
-                    if buffer.readableBytes == 0 { break }
-                    let data = buffer.withUnsafeReadableBytes { Data($0) }
-                    try outputHandle.write(contentsOf: data)
-
-                    offset += UInt64(data.count)
-                    completedByteCount += Int64(data.count)
-                    progress?(.init(completedByteCount: completedByteCount, totalByteCount: totalByteCount))
                 }
-
-                if completedByteCount == 0 {
-                    progress?(.init(completedByteCount: 0, totalByteCount: totalByteCount ?? 0))
+                let output = try FileHandle(forUpdating: stagingURL)
+                defer { try? output.close() }
+                let existingSize = try output.seekToEnd()
+                let offset = try await ResumableTransferCopy.validatedOffset(
+                    existingSize: existingSize, totalSize: total,
+                    source: { offset, count in
+                        let buffer = try await remoteFile.read(from: offset, length: UInt32(count))
+                        return buffer.withUnsafeReadableBytes { Data($0) }
+                    }, destination: { offset, count in
+                        try output.seek(toOffset: offset)
+                        return try output.read(upToCount: count) ?? Data()
+                    })
+                try output.truncate(atOffset: offset)
+                try await ResumableTransferCopy.copy(from: offset, totalSize: total, chunkSize: 64 * 1024,
+                    activity: activity, progress: progress, isCancelled: isCancelled,
+                    read: { offset, count in
+                        let buffer = try await remoteFile.read(from: offset, length: UInt32(count))
+                        return buffer.withUnsafeReadableBytes { Data($0) }
+                    }, write: { offset, data in
+                        try output.seek(toOffset: offset)
+                        try output.write(contentsOf: data)
+                    })
+                try output.synchronize()
+                let finalAttributes = try await remoteFile.readAttributes()
+                guard finalAttributes.size == attributes.size,
+                      finalAttributes.accessModificationTime?.modificationTime == modified else {
+                    throw RemoteClientError.requestFailed(details: "Remote file changed during download. Retry to transfer the new version.")
                 }
+                return stagingURL
             }
-        } catch {
-            try? FileManager.default.removeItem(at: destinationURL)
-            throw error
+            try Task.checkCancellation()
+            if isCancelled?() == true { throw CancellationError() }
+            if overwrite && FileManager.default.fileExists(atPath: destinationURL.path) {
+                _ = try FileManager.default.replaceItemAt(destinationURL, withItemAt: partialURL)
+            } else {
+                try FileManager.default.moveItem(at: partialURL, to: destinationURL)
+            }
+        }
+    }
+
+    private func withTransferSFTP(
+        operationDescription: String,
+        isCancelled: (@Sendable () -> Bool)?,
+        operation: @escaping @Sendable (SFTPClient, TransferActivityMonitor) async throws -> Void
+    ) throws {
+        let activity = TransferActivityMonitor()
+        let channel = TransferSFTPChannel()
+        try runBlocking(timeout: Self.fileTransferTimeout, operationDescription: operationDescription,
+                        activity: activity, isCancelled: isCancelled, onCancel: { channel.cancel() }) {
+            _ = try await self.connectIfNeeded()
+            try Task.checkCancellation()
+            guard let ssh = self.withLock({ self.sshClient }) else {
+                throw RemoteClientError.requestFailed(details: "SSH connection is unavailable.")
+            }
+            // Each transfer owns a subsystem channel so a stalled/cancelled task
+            // can be closed without interrupting browsing or another transfer.
+            let sftp = try await ssh.openSFTP()
+            channel.install(sftp)
+            do {
+                try Task.checkCancellation()
+                try await operation(sftp, activity)
+                try await sftp.close()
+            } catch {
+                try? await sftp.close()
+                throw error
+            }
         }
     }
 
@@ -2815,6 +2866,9 @@ private final class CitadelSFTPSession: @unchecked Sendable {
     private func runBlocking<T>(
         timeout: TimeInterval,
         operationDescription: String,
+        activity: TransferActivityMonitor? = nil,
+        isCancelled: (@Sendable () -> Bool)? = nil,
+        onCancel: (@Sendable () -> Void)? = nil,
         _ operation: @escaping @Sendable () async throws -> T
     ) throws -> T {
         let semaphore = DispatchSemaphore(value: 0)
@@ -2828,13 +2882,16 @@ private final class CitadelSFTPSession: @unchecked Sendable {
             semaphore.signal()
         }
 
-        let waitResult = semaphore.wait(timeout: .now() + timeout)
-        if waitResult == .timedOut {
-            task.cancel()
-            throw RemoteClientError.operationTimedOut(
-                operation: operationDescription,
-                seconds: timeout
-            )
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        while semaphore.wait(timeout: .now() + 0.1) == .timedOut {
+            let cancelled = isCancelled?() == true
+            let expired = activity?.hasExpired(after: timeout) ?? (ProcessInfo.processInfo.systemUptime >= deadline)
+            if cancelled || expired {
+                task.cancel()
+                onCancel?()
+                if cancelled { throw CancellationError() }
+                throw RemoteClientError.operationTimedOut(operation: operationDescription, seconds: timeout)
+            }
         }
 
         guard let result = box.result else {
@@ -2848,6 +2905,7 @@ private final class CitadelSFTPSession: @unchecked Sendable {
     }
 
     private func normalizedError(_ error: Error) -> Error {
+        if error is CancellationError { return error }
         if let remoteClientError = error as? RemoteClientError {
             return remoteClientError
         }

@@ -10,19 +10,46 @@ private final class TestRemoteClient: RemoteClient, @unchecked Sendable {
     private let downloadChunkDelay: TimeInterval
     private let lock = NSLock()
     private var failingUploadNames: Set<String>
+    let requiresUploadStaging: Bool
+    private let captureProgress: Bool
+    private var retainedProgress: (@Sendable (TransferProgressSnapshot) -> Void)?
+    private var sourcePath: String?
+
+    var uploadedSourcePath: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return sourcePath
+    }
+
+    func emitLateProgress() {
+        lock.lock()
+        let callback = retainedProgress
+        lock.unlock()
+        callback?(.init(completedByteCount: 1, totalByteCount: 100))
+    }
+
+    func releaseProgress() {
+        lock.lock()
+        retainedProgress = nil
+        lock.unlock()
+    }
 
     init(
         remoteRootURL: URL,
         displayHost: String = "test-sftp.local",
         uploadChunkDelay: TimeInterval = 0,
         downloadChunkDelay: TimeInterval = 0,
-        failingUploadNames: Set<String> = []
+        failingUploadNames: Set<String> = [],
+        requiresUploadStaging: Bool = true,
+        captureProgress: Bool = false
     ) {
         self.remoteRootURL = remoteRootURL.standardizedFileURL
         self.displayHost = displayHost
         self.uploadChunkDelay = uploadChunkDelay
         self.downloadChunkDelay = downloadChunkDelay
         self.failingUploadNames = failingUploadNames
+        self.requiresUploadStaging = requiresUploadStaging
+        self.captureProgress = captureProgress
     }
 
     func setFailingUploadNames(_ names: Set<String>) {
@@ -82,6 +109,8 @@ private final class TestRemoteClient: RemoteClient, @unchecked Sendable {
     ) throws -> RemoteUploadResult {
         lock.lock()
         let shouldFail = failingUploadNames.contains(localURL.lastPathComponent)
+        sourcePath = localURL.path
+        if captureProgress { retainedProgress = progress }
         lock.unlock()
         if shouldFail {
             throw NSError(domain: "TestRemoteClient", code: 7, userInfo: [
@@ -2848,6 +2877,87 @@ struct FilePierTests {
         #expect(uploadedBody.value == Data("hello".utf8))
 
         try? FileManager.default.removeItem(at: baseURL)
+    }
+
+    @Test(arguments: [TransferStatus.completed, .failed, .cancelled])
+    func lateUploadProgressCannotResurrectTerminalTask(terminalStatus: TransferStatus) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let local = root.appendingPathComponent("Local", isDirectory: true)
+        let remote = root.appendingPathComponent("Remote", isDirectory: true)
+        try FileManager.default.createDirectory(at: local, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: remote, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = local.appendingPathComponent("late-progress.bin")
+        let payload = Data(repeating: 42, count: 512 * 1024)
+        try payload.write(to: source)
+        let client = TestRemoteClient(remoteRootURL: remote,
+            uploadChunkDelay: terminalStatus == .cancelled ? 0.02 : 0,
+            failingUploadNames: terminalStatus == .failed ? [source.lastPathComponent] : [],
+            requiresUploadStaging: false, captureProgress: true)
+        defer { client.releaseProgress() }
+        let state = await MainActor.run {
+            FilePierWorkspaceState(localFileBrowser: LocalFileBrowserService(), remoteClient: client,
+                localFileTransfer: LocalFileTransferService(), initialLocalDirectoryURL: local,
+                initialRemoteDirectoryURL: remote)
+        }
+        await MainActor.run {
+            state.remoteSessionStatus = .connected("test")
+            _ = state.handleDrop(of: [source], into: .remote)
+        }
+        if terminalStatus == .cancelled {
+            let id = try await eventuallyActivityID(named: source.lastPathComponent,
+                matching: { $0.status == .running && $0.progress > 0 }, in: state)
+            await MainActor.run { state.cancelTransferActivity(id) }
+        }
+        let id = try await eventuallyActivityID(named: source.lastPathComponent,
+            matching: { $0.status == terminalStatus }, in: state)
+        #expect(client.uploadedSourcePath == source.path)
+        #expect(try Data(contentsOf: source) == payload)
+        client.emitLateProgress()
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        await MainActor.run {
+            #expect(state.recentTransfers.first(where: { $0.id == id })?.status == terminalStatus)
+            #expect(!state.canPauseTransferActivity(id))
+            #expect(!state.canCancelTransferActivity(id))
+        }
+        if terminalStatus == .completed {
+            await MainActor.run { state.clearCompletedTransferActivities() }
+            client.emitLateProgress()
+            await withCheckedContinuation { continuation in
+                DispatchQueue.main.async { continuation.resume() }
+            }
+            await MainActor.run { #expect(!state.recentTransfers.contains(where: { $0.id == id })) }
+        }
+    }
+
+    @Test func batchLargerThanHistoryLimitKeepsActiveTasksAndFinishes() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let local = root.appendingPathComponent("Local", isDirectory: true)
+        let remote = root.appendingPathComponent("Remote", isDirectory: true)
+        try FileManager.default.createDirectory(at: local, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: remote, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let sources = (0..<28).map { local.appendingPathComponent("file-\($0).bin") }
+        for source in sources { try Data(count: 128 * 1024).write(to: source) }
+        let client = TestRemoteClient(remoteRootURL: remote, uploadChunkDelay: 0.05, requiresUploadStaging: false)
+        let state = await MainActor.run {
+            FilePierWorkspaceState(localFileBrowser: LocalFileBrowserService(), remoteClient: client,
+                localFileTransfer: LocalFileTransferService(), initialLocalDirectoryURL: local,
+                initialRemoteDirectoryURL: remote)
+        }
+        await MainActor.run {
+            state.remoteSessionStatus = .connected("test")
+            state.maxConcurrentTransfers = 6
+            _ = state.handleDrop(of: sources, into: .remote)
+        }
+        try await eventually { state.recentTransfers.count > 24 }
+        try await eventually(timeout: 8) {
+            !state.recentTransfers.isEmpty && state.recentTransfers.allSatisfy { $0.status == .completed }
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: remote.path).count == 28)
+        await MainActor.run { #expect(state.recentTransfers.count == 24) }
     }
 
     @Test func runningUploadCanBePausedAndResumed() async throws {
