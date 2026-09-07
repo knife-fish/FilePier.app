@@ -328,6 +328,10 @@ enum TransferStatus: String, CaseIterable {
     case cancelled
     case failed
 
+    var isTerminal: Bool {
+        self == .completed || self == .cancelled || self == .failed
+    }
+
     var label: String {
         rawValue.capitalized
     }
@@ -2407,18 +2411,29 @@ final class FilePierWorkspaceState: ObservableObject {
 
     private func prependTransferActivity(_ activity: TransferActivity) {
         recentTransfers.insert(activity, at: 0)
-        if recentTransfers.count > 24 {
-            recentTransfers.removeLast(recentTransfers.count - 24)
-        }
+        trimTransferHistory()
     }
 
     private func replaceTransferActivity(id: UUID, with updatedActivity: TransferActivity) {
-        guard let index = recentTransfers.firstIndex(where: { $0.id == id }) else {
-            prependTransferActivity(updatedActivity)
-            return
-        }
-
+        // Late progress from a cancelled/timed-out worker must never resurrect
+        // a terminal task, including one removed with Clear Completed.
+        guard let index = recentTransfers.firstIndex(where: { $0.id == id }),
+              !recentTransfers[index].status.isTerminal else { return }
+        if recentTransfers[index].status == .paused,
+           updatedActivity.status == .running,
+           transferControls[id]?.pauseController?.isPaused == true { return }
         recentTransfers[index] = updatedActivity
+        trimTransferHistory()
+    }
+
+    private func trimTransferHistory() {
+        // Active tasks must remain addressable even when a batch exceeds the
+        // history limit; otherwise their final update can lose its task record.
+        while recentTransfers.count > 24,
+              let index = recentTransfers.lastIndex(where: { $0.status.isTerminal }) {
+            let removed = recentTransfers.remove(at: index)
+            transferControls[removed.id] = nil
+        }
     }
 
     private func setTransferControl(_ control: TransferControl, for id: UUID) {
@@ -2766,8 +2781,13 @@ final class FilePierWorkspaceState: ObservableObject {
                         try withScopedLocalAccess(sourceURL) {
                             let performUpload = {
                                 try withSecurityScopedAccess(to: sourceURL) {
-                                    let stagedURL = try stageUploadSource(at: sourceURL)
-                                    defer { try? FileManager.default.removeItem(at: stagedURL) }
+                                    let needsStaging = clientBox.client.requiresUploadStaging
+                                    let stagedURL = needsStaging ? try stageUploadSource(at: sourceURL) : sourceURL
+                                    defer {
+                                        if needsStaging {
+                                            try? FileManager.default.removeItem(at: stagedURL.deletingLastPathComponent())
+                                        }
+                                    }
                                     let result = try clientBox.client.uploadItem(
                                         at: stagedURL,
                                         to: destination,

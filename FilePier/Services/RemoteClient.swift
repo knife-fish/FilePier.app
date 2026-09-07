@@ -1,6 +1,6 @@
 import Foundation
 
-struct TransferProgressSnapshot: Sendable, Equatable {
+nonisolated struct TransferProgressSnapshot: Sendable, Equatable {
     let completedByteCount: Int64
     let totalByteCount: Int64?
 
@@ -29,6 +29,7 @@ struct RemoteMutationResult {
 }
 
 protocol RemoteClient {
+    var requiresUploadStaging: Bool { get }
     func makeInitialLocation(relativeTo localDirectoryURL: URL) -> RemoteLocation
     func makeLocation(for directoryURL: URL) -> RemoteLocation
     func parentLocation(of location: RemoteLocation) -> RemoteLocation?
@@ -57,6 +58,8 @@ protocol RemoteClient {
 }
 
 extension RemoteClient {
+    var requiresUploadStaging: Bool { true }
+
     func loadItems(in location: RemoteLocation) throws -> [BrowserItem] {
         try loadDirectorySnapshot(in: location).items
     }
