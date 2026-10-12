@@ -2404,6 +2404,59 @@ struct FilePierTests {
         try? FileManager.default.removeItem(at: baseURL)
     }
 
+    @Test(arguments: ["", "Nested", "Empty"])
+    func uploadFolderOverwritePreservesUnrelatedFiles(subdirectory: String) async throws {
+        let baseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: baseURL) }
+        let localURL = baseURL.appendingPathComponent("Local", isDirectory: true)
+        let remoteURL = baseURL.appendingPathComponent("Remote", isDirectory: true)
+        let sourceFolderURL = localURL.appendingPathComponent("Logs", isDirectory: true)
+        let destinationFolderURL = remoteURL.appendingPathComponent("Logs", isDirectory: true)
+        let sourceContentsURL = subdirectory.isEmpty
+            ? sourceFolderURL : sourceFolderURL.appendingPathComponent(subdirectory, isDirectory: true)
+        let destinationContentsURL = subdirectory.isEmpty
+            ? destinationFolderURL : destinationFolderURL.appendingPathComponent(subdirectory, isDirectory: true)
+
+        try FileManager.default.createDirectory(at: sourceContentsURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destinationContentsURL, withIntermediateDirectories: true)
+        try "keep root".write(to: destinationFolderURL.appendingPathComponent("root-only.txt"), atomically: true, encoding: .utf8)
+        try "keep a".write(to: destinationContentsURL.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        try "old b".write(to: destinationContentsURL.appendingPathComponent("b.txt"), atomically: true, encoding: .utf8)
+        if subdirectory != "Empty" {
+            try "new b".write(to: sourceContentsURL.appendingPathComponent("b.txt"), atomically: true, encoding: .utf8)
+            try "new c".write(to: sourceContentsURL.appendingPathComponent("c.txt"), atomically: true, encoding: .utf8)
+        }
+
+        let state = await MainActor.run {
+            FilePierWorkspaceState(
+                localFileBrowser: LocalFileBrowserService(),
+                localFileTransfer: LocalFileTransferService(),
+                initialLocalDirectoryURL: localURL,
+                initialRemoteDirectoryURL: remoteURL
+            )
+        }
+        await MainActor.run {
+            state.remoteSessionStatus = .connected("example@test")
+            state.focusedPane = .local
+            state.selectLocalItem(id: sourceFolderURL.path(percentEncoded: false))
+            state.copyFocusedSelectionToOtherPane()
+            #expect(state.transferConflictResolutionRequest?.conflictingNames == ["Logs"])
+            state.resolveTransferConflict(with: .overwrite)
+        }
+
+        try await eventually {
+            !state.isRemoteBusy
+        }
+        #expect(try String(contentsOf: destinationFolderURL.appendingPathComponent("root-only.txt"), encoding: .utf8) == "keep root")
+        #expect(try String(contentsOf: destinationContentsURL.appendingPathComponent("a.txt"), encoding: .utf8) == "keep a")
+        #expect(try String(contentsOf: destinationContentsURL.appendingPathComponent("b.txt"), encoding: .utf8) == (subdirectory == "Empty" ? "old b" : "new b"))
+        if subdirectory != "Empty" {
+            #expect(try String(contentsOf: destinationContentsURL.appendingPathComponent("c.txt"), encoding: .utf8) == "new c")
+        }
+        #expect(!FileManager.default.fileExists(atPath: remoteURL.appendingPathComponent("Logs 2").path))
+    }
+
     @Test func downloadConflictRequiresResolutionAndCanRename() async throws {
         let baseURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -2450,21 +2503,32 @@ struct FilePierTests {
         try? FileManager.default.removeItem(at: baseURL)
     }
 
-    @Test func downloadFolderConflictCanOverwriteExistingFolder() async throws {
+    @Test(arguments: ["", "Nested", "Empty"])
+    func downloadFolderConflictCanOverwriteExistingFolder(subdirectory: String) async throws {
         let baseURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: baseURL) }
         let localURL = baseURL.appendingPathComponent("Local", isDirectory: true)
         let remoteURL = baseURL.appendingPathComponent("Remote", isDirectory: true)
         let existingFolderURL = localURL.appendingPathComponent("Logs", isDirectory: true)
         let remoteFolderURL = remoteURL.appendingPathComponent("Logs", isDirectory: true)
-        let remoteFileURL = remoteFolderURL.appendingPathComponent("app.log")
-        let preservedLocalFileURL = existingFolderURL.appendingPathComponent("keep-me.log")
+        let localContentsURL = subdirectory.isEmpty
+            ? existingFolderURL : existingFolderURL.appendingPathComponent(subdirectory, isDirectory: true)
+        let remoteContentsURL = subdirectory.isEmpty
+            ? remoteFolderURL : remoteFolderURL.appendingPathComponent(subdirectory, isDirectory: true)
+        let localFileURL = localContentsURL.appendingPathComponent("app.log")
+        let preservedLocalFileURL = localContentsURL.appendingPathComponent("keep-me.log")
+        let preservedRootFileURL = existingFolderURL.appendingPathComponent("root-only.log")
 
-        try FileManager.default.createDirectory(at: existingFolderURL, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: remoteFolderURL, withIntermediateDirectories: true)
-        try "old log".write(to: existingFolderURL.appendingPathComponent("app.log"), atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(at: localContentsURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: remoteContentsURL, withIntermediateDirectories: true)
+        try "old log".write(to: localFileURL, atomically: true, encoding: .utf8)
         try "keep me".write(to: preservedLocalFileURL, atomically: true, encoding: .utf8)
-        try "remote log".write(to: remoteFileURL, atomically: true, encoding: .utf8)
+        try "keep root".write(to: preservedRootFileURL, atomically: true, encoding: .utf8)
+        if subdirectory != "Empty" {
+            try "remote log".write(to: remoteContentsURL.appendingPathComponent("app.log"), atomically: true, encoding: .utf8)
+            try "new log".write(to: remoteContentsURL.appendingPathComponent("new.log"), atomically: true, encoding: .utf8)
+        }
 
         let state = await MainActor.run {
             FilePierWorkspaceState(
@@ -2487,12 +2551,15 @@ struct FilePierTests {
         }
 
         try await eventually {
-            (try? String(contentsOf: existingFolderURL.appendingPathComponent("app.log"), encoding: .utf8)) == "remote log" &&
-            (try? String(contentsOf: preservedLocalFileURL, encoding: .utf8)) == "keep me" &&
-            !FileManager.default.fileExists(atPath: localURL.appendingPathComponent("Logs 2", isDirectory: true).path)
+            !state.isRemoteBusy
         }
-
-        try? FileManager.default.removeItem(at: baseURL)
+        #expect(try String(contentsOf: localFileURL, encoding: .utf8) == (subdirectory == "Empty" ? "old log" : "remote log"))
+        #expect(try String(contentsOf: preservedLocalFileURL, encoding: .utf8) == "keep me")
+        #expect(try String(contentsOf: preservedRootFileURL, encoding: .utf8) == "keep root")
+        if subdirectory != "Empty" {
+            #expect(try String(contentsOf: localContentsURL.appendingPathComponent("new.log"), encoding: .utf8) == "new log")
+        }
+        #expect(!FileManager.default.fileExists(atPath: localURL.appendingPathComponent("Logs 2", isDirectory: true).path))
     }
 
     @Test func runningUploadCanBeCancelled() async throws {

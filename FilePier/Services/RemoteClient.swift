@@ -74,6 +74,14 @@ extension RemoteClient {
             return try createDirectory(named: proposedName, in: remoteLocation)
         case .overwrite:
             if let existingItem = try loadItems(in: remoteLocation).first(where: { $0.name == proposedName }) {
+                // Merge directory uploads so files absent from this upload survive.
+                // Individual file transfers apply the overwrite policy separately.
+                if existingItem.isDirectory {
+                    return RemoteMutationResult(
+                        remoteItemID: existingItem.pathDescription,
+                        destinationName: existingItem.name
+                    )
+                }
                 try deleteItem(
                     named: existingItem.name,
                     at: existingItem.pathDescription,
