@@ -2,6 +2,22 @@ import Testing
 import Foundation
 @testable import FilePier
 
+private final class TransferProgressGate: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var open = false
+    func wait() {
+        condition.lock()
+        while !open { condition.wait() }
+        condition.unlock()
+    }
+    func release() {
+        condition.lock()
+        open = true
+        condition.broadcast()
+        condition.unlock()
+    }
+}
+
 final class TestRemoteClient: RemoteClient, @unchecked Sendable {
     private let localFileBrowser = LocalFileBrowserService()
     private let remoteRootURL: URL
@@ -14,6 +30,9 @@ final class TestRemoteClient: RemoteClient, @unchecked Sendable {
     private let captureProgress: Bool
     private var retainedProgress: (@Sendable (TransferProgressSnapshot) -> Void)?
     private var sourcePath: String?
+    private let firstChunkGate: TransferProgressGate?
+
+    func releaseFirstChunk() { firstChunkGate?.release() }
 
     var uploadedSourcePath: String? {
         lock.lock()
@@ -41,7 +60,8 @@ final class TestRemoteClient: RemoteClient, @unchecked Sendable {
         downloadChunkDelay: TimeInterval = 0,
         failingUploadNames: Set<String> = [],
         requiresUploadStaging: Bool = true,
-        captureProgress: Bool = false
+        captureProgress: Bool = false,
+        holdAfterFirstChunk: Bool = false
     ) {
         self.remoteRootURL = remoteRootURL.standardizedFileURL
         self.displayHost = displayHost
@@ -50,6 +70,7 @@ final class TestRemoteClient: RemoteClient, @unchecked Sendable {
         self.failingUploadNames = failingUploadNames
         self.requiresUploadStaging = requiresUploadStaging
         self.captureProgress = captureProgress
+        self.firstChunkGate = holdAfterFirstChunk ? TransferProgressGate() : nil
     }
 
     func setFailingUploadNames(_ names: Set<String>) {
@@ -233,6 +254,7 @@ final class TestRemoteClient: RemoteClient, @unchecked Sendable {
             try outputHandle.write(contentsOf: data)
             completedByteCount += Int64(data.count)
             progress?(.init(completedByteCount: completedByteCount, totalByteCount: totalByteCount))
+            if completedByteCount == Int64(data.count) { firstChunkGate?.wait() }
             if chunkDelay > 0 {
                 Thread.sleep(forTimeInterval: chunkDelay)
             }
@@ -257,20 +279,21 @@ struct FilePierTests {
         Issue.record("Timed out waiting for asynchronous state to settle.")
     }
 
-    @Test func workspaceBootstrapsSampleData() async throws {
+    @Test func workspaceBootstrapsWithDisconnectedRemotePane() async throws {
         let state = await MainActor.run { FilePierWorkspaceState() }
 
         await MainActor.run {
             #expect(state.selectedServer != nil)
             #expect(!state.servers.isEmpty)
             #expect(!state.localItems.isEmpty)
-            #expect(!state.remoteItems.isEmpty)
+            #expect(state.remoteItems.isEmpty)
+            #expect(!state.isRemoteConnected)
             #expect(state.recentTransfers.isEmpty)
             #expect(!state.localPathDisplayName.isEmpty)
             #expect(!state.remotePathDisplayName.isEmpty)
             #expect(state.remotePathDisplayName.hasPrefix("sftp://"))
             #expect(state.selectedLocalItemID != nil)
-            #expect(state.selectedRemoteItemID != nil)
+            #expect(state.selectedRemoteItemID == nil)
         }
     }
 
@@ -420,6 +443,8 @@ struct FilePierTests {
             )
         }
 
+        await MainActor.run { state.remoteSessionStatus = .connected("mock fixture") }
+
         try await MainActor.run {
             #expect(state.remoteItems.contains(where: { $0.id == childURL.path(percentEncoded: false) }))
             let originalPath = state.remotePathDisplayName
@@ -453,6 +478,8 @@ struct FilePierTests {
                 initialRemoteDirectoryURL: remoteURL
             )
         }
+
+        await MainActor.run { state.remoteSessionStatus = .connected("mock fixture") }
 
         await MainActor.run {
             state.selectLocalItem(id: sourceFileURL.path(percentEncoded: false))
@@ -708,6 +735,8 @@ struct FilePierTests {
             )
         }
 
+        await MainActor.run { state.remoteSessionStatus = .connected("mock fixture") }
+
         let accepted = await MainActor.run {
             state.handleRemoteDrop(
                 of: [
@@ -761,6 +790,8 @@ struct FilePierTests {
             )
         }
 
+        await MainActor.run { state.remoteSessionStatus = .connected("mock fixture") }
+
         let accepted = await MainActor.run {
             state.handleRemoteDrop(
                 of: [
@@ -812,6 +843,8 @@ struct FilePierTests {
                 initialRemoteDirectoryURL: remoteURL
             )
         }
+
+        await MainActor.run { state.remoteSessionStatus = .connected("mock fixture") }
 
         let accepted = await MainActor.run {
             state.handleRemoteDrop(
@@ -904,6 +937,8 @@ struct FilePierTests {
             )
         }
 
+        await MainActor.run { state.remoteSessionStatus = .connected("mock fixture") }
+
         await MainActor.run {
             state.selectRemoteItem(id: sourceFileURL.path(percentEncoded: false))
             state.beginRenamingFocusedSelection()
@@ -979,6 +1014,8 @@ struct FilePierTests {
                 initialRemoteDirectoryURL: remoteURL
             )
         }
+
+        await MainActor.run { state.remoteSessionStatus = .connected("mock fixture") }
 
         await MainActor.run {
             state.selectRemoteItem(id: sourceFileURL.path(percentEncoded: false))
@@ -1057,6 +1094,8 @@ struct FilePierTests {
                 initialRemoteDirectoryURL: remoteURL
             )
         }
+
+        await MainActor.run { state.remoteSessionStatus = .connected("mock fixture") }
 
         await MainActor.run {
             state.selectRemoteItem(id: folderURL.path(percentEncoded: false))
@@ -2207,10 +2246,13 @@ struct FilePierTests {
         try FileManager.default.createDirectory(at: remoteURL, withIntermediateDirectories: true)
         try payload.write(to: sourceFileURL)
 
+        let client = TestRemoteClient(remoteRootURL: remoteURL, holdAfterFirstChunk: true)
+        defer { client.releaseFirstChunk() }
+
         let state = await MainActor.run {
             FilePierWorkspaceState(
                 localFileBrowser: LocalFileBrowserService(),
-                remoteClient: ProgressReportingRemoteClient(rootURL: remoteURL),
+                remoteClient: client,
                 localFileTransfer: LocalFileTransferService(),
                 initialLocalDirectoryURL: localURL,
                 initialRemoteDirectoryURL: remoteURL
@@ -2233,6 +2275,8 @@ struct FilePierTests {
                 $0.progress < 1
             })
         }
+
+        client.releaseFirstChunk()
 
         try await eventually(timeout: 4) {
             state.recentTransfers.contains(where: {
@@ -2333,6 +2377,8 @@ struct FilePierTests {
                 initialRemoteDirectoryURL: remoteURL
             )
         }
+
+        await MainActor.run { state.remoteSessionStatus = .connected("mock fixture") }
 
         await MainActor.run {
             state.focusedPane = .remote
@@ -2479,6 +2525,8 @@ struct FilePierTests {
             )
         }
 
+        await MainActor.run { state.remoteSessionStatus = .connected("mock fixture") }
+
         await MainActor.run {
             state.focusedPane = .remote
             state.selectRemoteItem(id: remoteSourceURL.path(percentEncoded: false))
@@ -2539,6 +2587,8 @@ struct FilePierTests {
             )
         }
 
+        await MainActor.run { state.remoteSessionStatus = .connected("mock fixture") }
+
         await MainActor.run {
             state.focusedPane = .remote
             state.selectRemoteItem(id: remoteFolderURL.path(percentEncoded: false))
@@ -2574,10 +2624,13 @@ struct FilePierTests {
         try FileManager.default.createDirectory(at: remoteURL, withIntermediateDirectories: true)
         try payload.write(to: sourceFileURL)
 
+        let client = TestRemoteClient(remoteRootURL: remoteURL, holdAfterFirstChunk: true)
+        defer { client.releaseFirstChunk() }
+
         let state = await MainActor.run {
             FilePierWorkspaceState(
                 localFileBrowser: LocalFileBrowserService(),
-                remoteClient: ProgressReportingRemoteClient(rootURL: remoteURL),
+                remoteClient: client,
                 localFileTransfer: LocalFileTransferService(),
                 initialLocalDirectoryURL: localURL,
                 initialRemoteDirectoryURL: remoteURL
@@ -2601,6 +2654,7 @@ struct FilePierTests {
         await MainActor.run {
             state.cancelTransferActivity(activityID)
         }
+        client.releaseFirstChunk()
 
         try await eventually(timeout: 4) {
             state.recentTransfers.contains(where: {
@@ -2960,8 +3014,8 @@ struct FilePierTests {
         let client = TestRemoteClient(remoteRootURL: remote,
             uploadChunkDelay: terminalStatus == .cancelled ? 0.02 : 0,
             failingUploadNames: terminalStatus == .failed ? [source.lastPathComponent] : [],
-            requiresUploadStaging: false, captureProgress: true)
-        defer { client.releaseProgress() }
+            requiresUploadStaging: false, captureProgress: true, holdAfterFirstChunk: terminalStatus == .cancelled)
+        defer { client.releaseProgress(); client.releaseFirstChunk() }
         let state = await MainActor.run {
             FilePierWorkspaceState(localFileBrowser: LocalFileBrowserService(), remoteClient: client,
                 localFileTransfer: LocalFileTransferService(), initialLocalDirectoryURL: local,
@@ -2975,6 +3029,7 @@ struct FilePierTests {
             let id = try await eventuallyActivityID(named: source.lastPathComponent,
                 matching: { $0.status == .running && $0.progress > 0 }, in: state)
             await MainActor.run { state.cancelTransferActivity(id) }
+            client.releaseFirstChunk()
         }
         let id = try await eventuallyActivityID(named: source.lastPathComponent,
             matching: { $0.status == terminalStatus }, in: state)
@@ -3008,7 +3063,8 @@ struct FilePierTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let sources = (0..<28).map { local.appendingPathComponent("file-\($0).bin") }
         for source in sources { try Data(count: 128 * 1024).write(to: source) }
-        let client = TestRemoteClient(remoteRootURL: remote, uploadChunkDelay: 0.05, requiresUploadStaging: false)
+        let client = TestRemoteClient(remoteRootURL: remote, requiresUploadStaging: false, holdAfterFirstChunk: true)
+        defer { client.releaseFirstChunk() }
         let state = await MainActor.run {
             FilePierWorkspaceState(localFileBrowser: LocalFileBrowserService(), remoteClient: client,
                 localFileTransfer: LocalFileTransferService(), initialLocalDirectoryURL: local,
@@ -3020,6 +3076,7 @@ struct FilePierTests {
             _ = state.handleDrop(of: sources, into: .remote)
         }
         try await eventually { state.recentTransfers.count > 24 }
+        client.releaseFirstChunk()
         try await eventually(timeout: 8) {
             !state.recentTransfers.isEmpty && state.recentTransfers.allSatisfy { $0.status == .completed }
         }
@@ -3039,10 +3096,13 @@ struct FilePierTests {
         try FileManager.default.createDirectory(at: remoteURL, withIntermediateDirectories: true)
         try payload.write(to: sourceFileURL)
 
+        let client = TestRemoteClient(remoteRootURL: remoteURL, holdAfterFirstChunk: true)
+        defer { client.releaseFirstChunk() }
+
         let state = await MainActor.run {
             FilePierWorkspaceState(
                 localFileBrowser: LocalFileBrowserService(),
-                remoteClient: TestRemoteClient(remoteRootURL: remoteURL, uploadChunkDelay: 0.015),
+                remoteClient: client,
                 localFileTransfer: LocalFileTransferService(),
                 initialLocalDirectoryURL: localURL,
                 initialRemoteDirectoryURL: remoteURL
@@ -3067,6 +3127,7 @@ struct FilePierTests {
             #expect(state.canPauseTransferActivity(activityID))
             state.pauseTransferActivity(activityID)
         }
+        client.releaseFirstChunk()
 
         try await eventually(timeout: 4) {
             state.recentTransfers.contains(where: {

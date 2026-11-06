@@ -31,7 +31,7 @@ struct ContentView: View {
         try? fileManager.createDirectory(at: remoteRoot, withIntermediateDirectories: true)
         try? fileManager.createDirectory(at: stateRoot, withIntermediateDirectories: true)
 
-        return FilePierWorkspaceState(
+        let state = FilePierWorkspaceState(
             localFileBrowser: LocalFileBrowserService(),
             localFileTransfer: LocalFileTransferService(),
             savedServerStore: JSONSavedServerStore(
@@ -50,6 +50,8 @@ struct ContentView: View {
             initialLocalDirectoryURL: localRoot,
             initialRemoteDirectoryURL: remoteRoot
         )
+        state.remoteSessionStatus = .connected("UI fixture")
+        return state
     }
 }
 

@@ -1045,6 +1045,22 @@
         }
       }
     },
+    "Connect a site before transferring files." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect a site before transferring files."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先连接站点，再传输文件。"
+          }
+        }
+      }
+    },
     "Connect a site before uploading with drag and drop." : {
       "localizations" : {
         "en" : {

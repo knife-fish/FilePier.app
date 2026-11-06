@@ -371,18 +371,12 @@ struct LibraryBackedS3RemoteClient: RemoteClient {
             in: localDirectoryURL,
             conflictPolicy: conflictPolicy
         )
-        if conflictPolicy == .overwrite, FileManager.default.fileExists(atPath: destinationURL.path(percentEncoded: false)) {
-            try localFileTransfer.deleteItem(at: destinationURL)
-        }
-
         let object = try transport.resolveObjectReference(for: remotePath)
-        try transport.downloadObject(
-            bucket: object.bucket,
-            key: object.key,
-            to: destinationURL,
-            progress: progress,
-            isCancelled: isCancelled
-        )
+        try localFileTransfer.downloadSafely(to: destinationURL, overwrite: conflictPolicy == .overwrite,
+                                            isCancelled: isCancelled) { stagedURL in
+            try transport.downloadObject(bucket: object.bucket, key: object.key, to: stagedURL,
+                                         progress: progress, isCancelled: isCancelled)
+        }
         return LocalFileTransferResult(
             sourceURL: URL(fileURLWithPath: remotePath),
             destinationURL: destinationURL,
@@ -629,16 +623,11 @@ struct LibraryBackedWebDAVRemoteClient: RemoteClient {
             in: localDirectoryURL,
             conflictPolicy: conflictPolicy
         )
-        if conflictPolicy == .overwrite, FileManager.default.fileExists(atPath: destinationURL.path(percentEncoded: false)) {
-            try localFileTransfer.deleteItem(at: destinationURL)
+        try localFileTransfer.downloadSafely(to: destinationURL, overwrite: conflictPolicy == .overwrite,
+                                            isCancelled: isCancelled) { stagedURL in
+            try transport.downloadItem(atRemotePath: remotePath, to: stagedURL,
+                                       progress: progress, isCancelled: isCancelled)
         }
-
-        try transport.downloadItem(
-            atRemotePath: remotePath,
-            to: destinationURL,
-            progress: progress,
-            isCancelled: isCancelled
-        )
         return LocalFileTransferResult(
             sourceURL: URL(fileURLWithPath: remotePath),
             destinationURL: destinationURL,
