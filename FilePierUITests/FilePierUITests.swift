@@ -21,6 +21,7 @@ final class FilePierUITests: XCTestCase {
     func testWorkspaceAppearsOnLaunch() throws {
         let app = makeFixtureApplication()
         app.launch()
+        app.activate()
 
         XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Readme.md"].waitForExistence(timeout: 5))
@@ -41,6 +42,7 @@ final class FilePierUITests: XCTestCase {
     private func assertAdditiveSelection(using modifier: XCUIElement.KeyModifierFlags) throws {
         let app = makeFixtureApplication()
         app.launch()
+        app.activate()
 
         for (pane, names) in [
             ("local-browser-list", ["Readme.md", "Second.txt", "Third.txt"]),
@@ -73,6 +75,7 @@ final class FilePierUITests: XCTestCase {
     func testShiftClickSelectsRangeAndRightClickPreservesSelection() throws {
         let app = makeFixtureApplication()
         app.launch()
+        app.activate()
 
         for (pane, names) in [
             ("local-browser-list", ["Readme.md", "Second.txt", "Third.txt"]),
@@ -100,10 +103,36 @@ final class FilePierUITests: XCTestCase {
     func testDoubleClickStillOpensFolder() throws {
         let app = makeFixtureApplication()
         app.launch()
+        app.activate()
         let list = app.descendants(matching: .any).matching(identifier: "remote-browser-list").firstMatch
         XCTAssertTrue(list.staticTexts["Logs"].waitForExistence(timeout: 5))
         list.staticTexts["Logs"].doubleClick()
         XCTAssertTrue(list.staticTexts["latest.log"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testContextRefreshKeepsMultiSelectionInBothPanes() throws {
+        let app = makeFixtureApplication()
+        app.launchArguments += ["-AppleLanguages", "(en)"]
+        app.launch()
+        app.activate()
+        for (pane, names) in [
+            ("local-browser-list", ["Readme.md", "Second.txt"]),
+            ("remote-browser-list", ["First.log", "Second.log"])
+        ] {
+            let list = app.descendants(matching: .any).matching(identifier: pane).firstMatch
+            XCTAssertTrue(list.waitForExistence(timeout: 5))
+            list.staticTexts[names[0]].click()
+            XCUIElement.perform(withKeyModifiers: .command) { list.staticTexts[names[1]].click() }
+            list.staticTexts[names[1]].rightClick()
+            let refresh = app.menuItems["Refresh"]
+            XCTAssertTrue(refresh.waitForExistence(timeout: 3))
+            refresh.click()
+            for name in names {
+                XCTAssertTrue(list.outlineRows.containing(.staticText, identifier: name).firstMatch.isSelected,
+                    "Refreshing must retain multiple selected files in \(pane).")
+            }
+        }
     }
 
     @MainActor

@@ -9,6 +9,35 @@ struct LocalFileTransferResult {
 struct LocalFileTransferService {
     nonisolated init() {}
 
+    /// Download beside the destination so publishing is an atomic same-volume
+    /// move or replacement. Failure and cancellation leave the old file intact.
+    func downloadSafely(
+        to destinationURL: URL,
+        overwrite: Bool,
+        isCancelled: (@Sendable () -> Bool)?,
+        download: (URL) throws -> Void
+    ) throws {
+        let lease = try TransferDestinationLease.acquire("download:\(destinationURL.standardizedFileURL.path)")
+        defer { lease.release() }
+        let stagingDirectory = destinationURL.deletingLastPathComponent()
+            .appendingPathComponent(".filepier-download-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: stagingDirectory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: stagingDirectory) }
+        let stagedURL = stagingDirectory.appendingPathComponent(destinationURL.lastPathComponent)
+        if isCancelled?() == true { throw CancellationError() }
+        try download(stagedURL)
+        if isCancelled?() == true { throw CancellationError() }
+
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: destinationURL.path, isDirectory: &isDirectory)
+        guard !isDirectory.boolValue else { throw CocoaError(.fileWriteFileExists) }
+        if overwrite && exists {
+            _ = try FileManager.default.replaceItemAt(destinationURL, withItemAt: stagedURL)
+        } else {
+            try FileManager.default.moveItem(at: stagedURL, to: destinationURL)
+        }
+    }
+
     func copyItem(at sourceURL: URL, toDirectory destinationDirectoryURL: URL) throws -> LocalFileTransferResult {
         let fileManager = FileManager.default
         let destinationURL = uniqueDestinationURL(for: sourceURL, in: destinationDirectoryURL)

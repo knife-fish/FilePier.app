@@ -388,7 +388,7 @@ private enum PendingTransferLaunch {
     case download(items: [BrowserItem], targetItemID: BrowserItem.ID?, destinationDirectoryURL: URL)
 }
 
-private final class TransferCancellationController: @unchecked Sendable {
+final class TransferCancellationController: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
 
@@ -405,7 +405,7 @@ private final class TransferCancellationController: @unchecked Sendable {
     }
 }
 
-private final class TransferPauseController: @unchecked Sendable {
+final class TransferPauseController: @unchecked Sendable {
     private let condition = NSCondition()
     private var paused = false
 
@@ -441,12 +441,13 @@ private final class TransferPauseController: @unchecked Sendable {
     }
 }
 
-private struct TransferControl {
+struct TransferControl {
     var cancellationController: TransferCancellationController?
     var pauseController: TransferPauseController?
     var pausedActivityDetail: String?
     var pausedActivityStatus: TransferStatus?
     var retryDescriptor: TransferRetryDescriptor?
+    var server: TransferServerIdentity?
 }
 
 enum BrowserPane: String, CaseIterable, Identifiable {
@@ -603,13 +604,19 @@ final class FilePierWorkspaceState: ObservableObject {
     @Published var focusedPane: BrowserPane = .local
     @Published var showsInspector = true
     @Published var browserDensity: BrowserDensityMode = .comfortable
-    @Published var maxConcurrentTransfers = WorkspacePreferences.default.maxConcurrentTransfers
+    var maxConcurrentTransfers: Int {
+        get { transferCoordinator.maxConcurrentTransfers }
+        set { transferCoordinator.maxConcurrentTransfers = min(max(newValue, 1), 6) }
+    }
     @Published var localBrowserSort = WorkspacePreferences.default.localBrowserSort
     @Published var remoteBrowserSort = WorkspacePreferences.default.remoteBrowserSort
     @Published var localItems: [BrowserItem]
     @Published var remoteItems: [BrowserItem]
     @Published var places: [PlaceItem]
-    @Published var recentTransfers: [TransferActivity]
+    var recentTransfers: [TransferActivity] {
+        get { transferCoordinator.activities }
+        set { transferCoordinator.activities = newValue }
+    }
     @Published var servers: [ServerProfile]
     @Published private(set) var siteUsageByServerID: [UUID: SiteUsageRecord]
     @Published var localDirectoryURL: URL
@@ -642,11 +649,22 @@ final class FilePierWorkspaceState: ObservableObject {
     private let savedServerStore: any SavedServerStore
     private let favoritePlaceStore: any FavoritePlaceStore
     private let workspacePreferenceStore: any WorkspacePreferenceStore
-    private let transferQueueStore: any TransferQueueStore
+    private let transferCoordinator: TransferCoordinator
+    private var transferObservation: AnyCancellable?
+    private var transferQueueStore: any TransferQueueStore { transferCoordinator.store }
     private var workspacePreferences: WorkspacePreferences
-    private var savedTransfers: [UUID: SavedTransfer] = [:]
-    private var restoredTransferIDs: Set<UUID> = []
-    private var lastTransferQueueSave = Date.distantPast
+    private var savedTransfers: [UUID: SavedTransfer] {
+        get { transferCoordinator.savedTransfers }
+        set { transferCoordinator.savedTransfers = newValue }
+    }
+    private var restoredTransferIDs: Set<UUID> {
+        get { transferCoordinator.restoredIDs }
+        set { transferCoordinator.restoredIDs = newValue }
+    }
+    private var lastTransferQueueSave: Date {
+        get { transferCoordinator.lastSave }
+        set { transferCoordinator.lastSave = newValue }
+    }
     private var sessionServer: ServerProfile?
     private let siteUsageStore: any SiteUsageStore
     private let credentialStore: any ServerCredentialStore
@@ -654,7 +672,14 @@ final class FilePierWorkspaceState: ObservableObject {
     private var remoteClient: any RemoteClient
     private let localFileTransfer: LocalFileTransferService
     private let remoteSessionFactory: RemoteSessionFactory
+    private var remoteSessionID = UUID()
     private var remoteConnectionAttemptID = UUID()
+    private var remoteDirectoryRequestID = UUID()
+    private var pendingTransferSessionID: UUID?
+    private var renameSessionID: UUID?
+    private var deleteSessionID: UUID?
+    private var nonEmptyDeleteSessionID: UUID?
+    private var createFolderSessionID: UUID?
     private let remoteWorkQueue = DispatchQueue(
         label: AppConfiguration.queueLabel("remote-work"),
         qos: .userInitiated,
@@ -665,10 +690,12 @@ final class FilePierWorkspaceState: ObservableObject {
         qos: .userInitiated,
         attributes: .concurrent
     )
-    private var transferControls: [UUID: TransferControl] = [:]
+    private var transferControls: [UUID: TransferControl] {
+        get { transferCoordinator.controls }
+        set { transferCoordinator.controls = newValue }
+    }
     private var localSecurityScopeRootURL: URL?
     private var pendingTransferLaunch: PendingTransferLaunch?
-    private var activeLocalDragURLs: [URL] = []
 
     @MainActor
     init() {
@@ -692,7 +719,7 @@ final class FilePierWorkspaceState: ObservableObject {
         self.favoritePlaceStore = favoritePlaceStore
         self.workspacePreferenceStore = workspacePreferenceStore
         self.workspacePreferences = initialPreferences
-        self.transferQueueStore = JSONTransferQueueStore()
+        self.transferCoordinator = .shared
         self.siteUsageStore = siteUsageStore
         self.credentialStore = credentialStore
         self.networkMonitor = networkMonitor
@@ -700,12 +727,10 @@ final class FilePierWorkspaceState: ObservableObject {
         self.localFileTransfer = LocalFileTransferService()
         self.remoteSessionFactory = Self.defaultRemoteSessionFactory
         self.servers = initialServers
-        self.recentTransfers = []
         self.selectedServer = initialSelectedServer
         self.siteUsageByServerID = initialSiteUsage
         self.showsInspector = initialPreferences.showsInspector
         self.browserDensity = initialPreferences.browserDensity
-        self.maxConcurrentTransfers = initialPreferences.maxConcurrentTransfers
         self.localBrowserSort = initialPreferences.localBrowserSort
         self.remoteBrowserSort = initialPreferences.remoteBrowserSort
         self.connectionDraft = initialConnectionDraft
@@ -728,10 +753,12 @@ final class FilePierWorkspaceState: ObservableObject {
 
         establishLocalDirectoryAccess(at: initialDirectory)
         restoreLocalDirectory(initialPreferences.lastLocalDirectory)
+        if !self.transferCoordinator.didRestore { maxConcurrentTransfers = initialPreferences.maxConcurrentTransfers }
         restoreTransferQueue()
+        transferObservation = self.transferCoordinator.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         configureNetworkMonitor()
         reloadDirectory(in: .local, selecting: nil)
-        reloadDirectory(in: .remote, selecting: nil)
+
     }
 
     @MainActor
@@ -743,7 +770,8 @@ final class FilePierWorkspaceState: ObservableObject {
         savedServerStore: (any SavedServerStore)? = nil,
         favoritePlaceStore: (any FavoritePlaceStore)? = nil,
         workspacePreferenceStore: (any WorkspacePreferenceStore)? = nil,
-        transferQueueStore: any TransferQueueStore = InMemoryTransferQueueStore(),
+        transferQueueStore: (any TransferQueueStore)? = nil,
+        transferCoordinator: TransferCoordinator? = nil,
         siteUsageStore: (any SiteUsageStore)? = nil,
         credentialStore: (any ServerCredentialStore)? = nil,
         networkMonitor: (any NetworkReachabilityMonitoring)? = nil,
@@ -769,7 +797,7 @@ final class FilePierWorkspaceState: ObservableObject {
         self.favoritePlaceStore = resolvedFavoritePlaceStore
         self.workspacePreferenceStore = resolvedWorkspacePreferenceStore
         self.workspacePreferences = initialPreferences
-        self.transferQueueStore = transferQueueStore
+        self.transferCoordinator = transferCoordinator ?? TransferCoordinator(store: transferQueueStore ?? InMemoryTransferQueueStore())
         self.siteUsageStore = resolvedSiteUsageStore
         self.credentialStore = resolvedCredentialStore
         self.networkMonitor = networkMonitor
@@ -777,12 +805,10 @@ final class FilePierWorkspaceState: ObservableObject {
         self.localFileTransfer = localFileTransfer
         self.remoteSessionFactory = remoteClientFactory ?? Self.defaultRemoteSessionFactory
         self.servers = initialServers
-        self.recentTransfers = []
         self.selectedServer = initialSelectedServer
         self.siteUsageByServerID = initialSiteUsage
         self.showsInspector = initialPreferences.showsInspector
         self.browserDensity = initialPreferences.browserDensity
-        self.maxConcurrentTransfers = initialPreferences.maxConcurrentTransfers
         self.localBrowserSort = initialPreferences.localBrowserSort
         self.remoteBrowserSort = initialPreferences.remoteBrowserSort
         self.connectionDraft = initialConnectionDraft
@@ -808,7 +834,9 @@ final class FilePierWorkspaceState: ObservableObject {
 
         establishLocalDirectoryAccess(at: initialLocalDirectoryURL)
         restoreLocalDirectory(initialPreferences.lastLocalDirectory)
+        if !self.transferCoordinator.didRestore { maxConcurrentTransfers = initialPreferences.maxConcurrentTransfers }
         restoreTransferQueue()
+        transferObservation = self.transferCoordinator.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         configureNetworkMonitor()
         reloadDirectory(in: .local, selecting: nil)
         reloadDirectory(in: .remote, selecting: nil)
@@ -861,7 +889,8 @@ final class FilePierWorkspaceState: ObservableObject {
     }
 
     var canCopyFocusedSelectionToOtherPane: Bool {
-        switch focusedPane {
+        guard isRemoteConnected else { return false }
+        return switch focusedPane {
         case .local:
             selectedItems.contains(where: { $0.url != nil })
         case .remote:
@@ -953,11 +982,11 @@ final class FilePierWorkspaceState: ObservableObject {
     }
 
     func refreshLocalDirectory() {
-        reloadDirectory(in: .local, selecting: selectedLocalItemID)
+        reloadDirectory(in: .local, selecting: selectedLocalItemID, preservingSelection: true)
     }
 
     func refreshRemoteDirectory() {
-        reloadRemoteDirectoryAsync(selecting: selectedRemoteItemID)
+        reloadRemoteDirectoryAsync(selecting: selectedRemoteItemID, preservingSelection: true)
     }
 
     func refreshFocusedDirectory() {
@@ -1330,6 +1359,12 @@ final class FilePierWorkspaceState: ObservableObject {
     }
 
     func retryTransferActivity(_ id: UUID) {
+        guard requireRemoteConnectionForTransfer() else { return }
+        if let identity = transferControls[id]?.server,
+           let server = sessionServer ?? selectedServer, !identity.matches(server) {
+            transferFeedback = TransferFeedback(message: String(localized: "Connect to \(identity.name) before resuming this transfer."), status: .failed)
+            return
+        }
         if savedTransfers[id] != nil {
             startSavedTransfer(id)
             return
@@ -1443,7 +1478,16 @@ final class FilePierWorkspaceState: ObservableObject {
         }
     }
 
+    private func requireRemoteConnectionForTransfer() -> Bool {
+        guard isRemoteConnected else {
+            transferFeedback = TransferFeedback(message: String(localized: "Connect a site before transferring files."), status: .failed)
+            return false
+        }
+        return true
+    }
+
     func copyFocusedSelectionToOtherPane() {
+        guard requireRemoteConnectionForTransfer() else { return }
         let sourcePane = focusedPane
         let destinationPane: BrowserPane = sourcePane == .local ? .remote : .local
 
@@ -1482,7 +1526,7 @@ final class FilePierWorkspaceState: ObservableObject {
     }
 
     func handleRemoteDrop(of items: [RemoteDragItem], into destinationPane: BrowserPane, targetItemID: BrowserItem.ID? = nil) -> Bool {
-        guard destinationPane == .local else { return false }
+        guard destinationPane == .local, requireRemoteConnectionForTransfer() else { return false }
 
         downloadRemoteItems(
             items.map {
@@ -1713,6 +1757,7 @@ final class FilePierWorkspaceState: ObservableObject {
 
     func beginCreatingFolderInFocusedPane() {
         guard canCreateFolderInFocusedPane else { return }
+        createFolderSessionID = focusedPane == .remote ? remoteSessionID : nil
         createFolderRequest = CreateFolderRequest(pane: focusedPane, proposedName: String(localized: "New Folder"))
     }
 
@@ -1727,6 +1772,7 @@ final class FilePierWorkspaceState: ObservableObject {
             return
         }
 
+        invalidateRemoteSessionWork()
         let resolvedServer = makeResolvedServer()
         sessionServer = resolvedServer
         remoteSessionServerID = resolvedServer.id
@@ -1758,6 +1804,7 @@ final class FilePierWorkspaceState: ObservableObject {
         remoteErrorMessage = nil
         remoteItems = []
         selectedRemoteItemID = nil
+        selectedRemoteItemIDs = []
 
         let attemptID = UUID()
         remoteConnectionAttemptID = attemptID
@@ -1768,7 +1815,7 @@ final class FilePierWorkspaceState: ObservableObject {
         }
         connectionLocations.append(services.client.makeInitialLocation(relativeTo: localDirectoryURL))
         let locations = connectionLocations.uniquedPreservingOrder()
-        beginRemoteActivity()
+        let sessionID = beginRemoteActivity()
 
         remoteWorkQueue.async {
             var result: Result<RemoteDirectorySnapshot, Error> = .failure(CocoaError(.fileNoSuchFile))
@@ -1782,8 +1829,9 @@ final class FilePierWorkspaceState: ObservableObject {
             }
 
             DispatchQueue.main.async {
-                self.endRemoteActivity()
-                guard attemptID == self.remoteConnectionAttemptID else { return }
+                self.endRemoteActivity(for: sessionID)
+                guard attemptID == self.remoteConnectionAttemptID,
+                      sessionID == self.remoteSessionID, self.isNetworkReachable else { return }
 
                 switch result {
                 case .success(let snapshot):
@@ -1823,6 +1871,7 @@ final class FilePierWorkspaceState: ObservableObject {
                 case .failure(let error):
                     self.remoteItems = []
                     self.selectedRemoteItemID = nil
+                    self.selectedRemoteItemIDs = []
                     self.remoteErrorMessage = error.localizedDescription
                     self.remoteSessionStatus = .failed(error.localizedDescription)
                     self.transferFeedback = TransferFeedback(
@@ -1904,6 +1953,7 @@ final class FilePierWorkspaceState: ObservableObject {
     func beginRenaming(itemID: BrowserItem.ID, in pane: BrowserPane) {
         guard let item = item(for: pane, id: itemID) else { return }
         select(itemID: itemID, in: pane)
+        renameSessionID = pane == .remote ? remoteSessionID : nil
         renameRequest = RenameRequest(
             pane: pane,
             itemID: itemID,
@@ -1918,6 +1968,10 @@ final class FilePierWorkspaceState: ObservableObject {
             return
         }
 
+        guard renameRequest.pane == .local || (renameSessionID == remoteSessionID && isRemoteConnected) else {
+            self.renameRequest = nil
+            return
+        }
         switch renameRequest.pane {
         case .local:
             guard let sourceURL = item.url else {
@@ -1943,7 +1997,7 @@ final class FilePierWorkspaceState: ObservableObject {
             let originalName = renameRequest.originalName
             let remotePath = item.pathDescription
             let proposedName = renameRequest.proposedName
-            beginRemoteActivity()
+            let sessionID = beginRemoteActivity()
             remoteWorkQueue.async {
                 let result: Result<RemoteMutationResult, Error>
                 do {
@@ -1957,7 +2011,8 @@ final class FilePierWorkspaceState: ObservableObject {
                 }
 
                 DispatchQueue.main.async {
-                    self.endRemoteActivity()
+                    self.endRemoteActivity(for: sessionID)
+                    guard self.isCurrentRemoteSession(sessionID) else { return }
                     switch result {
                     case .success(let mutation):
                         self.reloadRemoteDirectoryAsync(selecting: mutation.remoteItemID)
@@ -1990,6 +2045,7 @@ final class FilePierWorkspaceState: ObservableObject {
     func requestDelete(itemID: BrowserItem.ID, in pane: BrowserPane) {
         guard let item = item(for: pane, id: itemID) else { return }
         select(itemID: itemID, in: pane)
+        deleteSessionID = pane == .remote ? remoteSessionID : nil
         deleteRequest = DeleteRequest(
             pane: pane,
             itemID: itemID,
@@ -2004,6 +2060,7 @@ final class FilePierWorkspaceState: ObservableObject {
         }
 
         self.deleteRequest = nil
+        guard deleteRequest.pane == .local || (deleteSessionID == remoteSessionID && isRemoteConnected) else { return }
 
         if item.isDirectory {
             switch deleteRequest.pane {
@@ -2025,7 +2082,7 @@ final class FilePierWorkspaceState: ObservableObject {
                 }
 
                 let clientBox = SendableRemoteClientBox(remoteClient)
-                beginRemoteActivity()
+                let sessionID = beginRemoteActivity()
                 remoteWorkQueue.async {
                     let result: Result<Bool, Error>
                     do {
@@ -2035,10 +2092,12 @@ final class FilePierWorkspaceState: ObservableObject {
                     }
 
                     DispatchQueue.main.async {
-                        self.endRemoteActivity()
+                        self.endRemoteActivity(for: sessionID)
+                        guard self.isCurrentRemoteSession(sessionID) else { return }
                         switch result {
                         case .success(let hasContents):
                             if hasContents {
+                                self.nonEmptyDeleteSessionID = sessionID
                                 self.nonEmptyFolderDeleteRequest = NonEmptyFolderDeleteRequest(
                                     pane: deleteRequest.pane,
                                     itemID: deleteRequest.itemID,
@@ -2080,6 +2139,10 @@ final class FilePierWorkspaceState: ObservableObject {
             return
         }
 
+        guard request.pane == .local || (nonEmptyDeleteSessionID == remoteSessionID && isRemoteConnected) else {
+            nonEmptyFolderDeleteRequest = nil
+            return
+        }
         let deleteRequest = DeleteRequest(
             pane: request.pane,
             itemID: request.itemID,
@@ -2101,6 +2164,10 @@ final class FilePierWorkspaceState: ObservableObject {
 
     func submitCreateFolderRequest() {
         guard let createFolderRequest else { return }
+        guard createFolderRequest.pane == .local || (createFolderSessionID == remoteSessionID && isRemoteConnected) else {
+            self.createFolderRequest = nil
+            return
+        }
 
         switch createFolderRequest.pane {
         case .local:
@@ -2124,7 +2191,7 @@ final class FilePierWorkspaceState: ObservableObject {
             let clientBox = SendableRemoteClientBox(remoteClient)
             let proposedName = createFolderRequest.proposedName
             let remoteLocation = remoteLocation
-            beginRemoteActivity()
+            let sessionID = beginRemoteActivity()
             remoteWorkQueue.async {
                 let result: Result<RemoteMutationResult, Error>
                 do {
@@ -2137,7 +2204,8 @@ final class FilePierWorkspaceState: ObservableObject {
                 }
 
                 DispatchQueue.main.async {
-                    self.endRemoteActivity()
+                    self.endRemoteActivity(for: sessionID)
+                    guard self.isCurrentRemoteSession(sessionID) else { return }
                     switch result {
                     case .success(let mutation):
                         self.reloadRemoteDirectoryAsync(selecting: mutation.remoteItemID)
@@ -2164,6 +2232,10 @@ final class FilePierWorkspaceState: ObservableObject {
 
     func resolveTransferConflict(with policy: TransferConflictPolicy) {
         guard let pendingTransferLaunch else { return }
+        guard pendingTransferSessionID == remoteSessionID, requireRemoteConnectionForTransfer() else {
+            cancelTransferConflictResolution()
+            return
+        }
         transferConflictResolutionRequest = nil
         self.pendingTransferLaunch = nil
 
@@ -2190,78 +2262,40 @@ final class FilePierWorkspaceState: ObservableObject {
     func cancelTransferConflictResolution() {
         transferConflictResolutionRequest = nil
         pendingTransferLaunch = nil
-    }
-
-    func beginLocalDrag(items: [BrowserItem]) {
-        activeLocalDragURLs = items.compactMap(\.url).map(\.standardizedFileURL)
-    }
-
-    func resolveLocalDragURLs(fallingBackTo droppedURLs: [URL]) -> [URL] {
-        let normalizedDroppedURLs = droppedURLs.map(\.standardizedFileURL)
-        defer { activeLocalDragURLs = [] }
-
-        guard !activeLocalDragURLs.isEmpty else {
-            return normalizedDroppedURLs
-        }
-
-        guard !normalizedDroppedURLs.isEmpty else {
-            return activeLocalDragURLs
-        }
-
-        let activePaths = Set(activeLocalDragURLs.map { $0.path(percentEncoded: false) })
-        let droppedPaths = Set(normalizedDroppedURLs.map { $0.path(percentEncoded: false) })
-        guard !activePaths.isDisjoint(with: droppedPaths) else {
-            return normalizedDroppedURLs
-        }
-
-        return activeLocalDragURLs
+        pendingTransferSessionID = nil
     }
 
     func selectLocalItem(id: BrowserItem.ID?) {
-        selectedLocalItemID = id
-        selectedLocalItemIDs = id.map { [$0] } ?? []
-        if id != nil {
-            selectedRemoteItemID = nil
-            selectedRemoteItemIDs = []
-            focusedPane = .local
-        }
+        selectLocalItems(ids: id.map { [$0] } ?? [])
     }
 
     func selectRemoteItem(id: BrowserItem.ID?) {
-        selectedRemoteItemID = id
-        selectedRemoteItemIDs = id.map { [$0] } ?? []
-        if id != nil {
-            selectedLocalItemID = nil
-            selectedLocalItemIDs = []
-            focusedPane = .remote
-        }
+        selectRemoteItems(ids: id.map { [$0] } ?? [])
     }
 
     func selectLocalItems(ids: Set<BrowserItem.ID>) {
-        selectedLocalItemIDs = ids
-        if let selectedLocalItemID, ids.contains(selectedLocalItemID) {
-            self.selectedLocalItemID = selectedLocalItemID
-        } else {
-            selectedLocalItemID = localItems.first(where: { ids.contains($0.id) })?.id
-        }
+        // AppKit can echo a selection while SwiftUI applies the other pane's
+        // deselection. Do not republish unchanged values or steal its focus.
+        let primary = selectedLocalItemID.flatMap { ids.contains($0) ? $0 : nil }
+            ?? localItems.first(where: { ids.contains($0.id) })?.id
+        if selectedLocalItemIDs != ids { selectedLocalItemIDs = ids }
+        if selectedLocalItemID != primary { selectedLocalItemID = primary }
         if !ids.isEmpty {
-            selectedRemoteItemID = nil
-            selectedRemoteItemIDs = []
-            focusedPane = .local
+            if selectedRemoteItemID != nil { selectedRemoteItemID = nil }
+            if !selectedRemoteItemIDs.isEmpty { selectedRemoteItemIDs = [] }
+            if focusedPane != .local { focusedPane = .local }
         }
     }
 
     func selectRemoteItems(ids: Set<BrowserItem.ID>) {
-        selectedRemoteItemIDs = ids
-        if let selectedRemoteItemID, ids.contains(selectedRemoteItemID) {
-            self.selectedRemoteItemID = selectedRemoteItemID
-        } else {
-            selectedRemoteItemID = remoteItems.first(where: { ids.contains($0.id) })?.id
-        }
+        let primary = selectedRemoteItemID.flatMap { ids.contains($0) ? $0 : nil }
+            ?? remoteItems.first(where: { ids.contains($0.id) })?.id
+        if selectedRemoteItemIDs != ids { selectedRemoteItemIDs = ids }
+        if selectedRemoteItemID != primary { selectedRemoteItemID = primary }
         if !ids.isEmpty {
-            selectedLocalItemID = nil
-            selectedLocalItemIDs = []
-            focusedPane = .remote
+            if selectedLocalItemID != nil { selectedLocalItemID = nil }
+            if !selectedLocalItemIDs.isEmpty { selectedLocalItemIDs = [] }
+            if focusedPane != .remote { focusedPane = .remote }
         }
     }
 
@@ -2476,6 +2510,8 @@ final class FilePierWorkspaceState: ObservableObject {
     }
 
     private func restoreTransferQueue() {
+        guard !transferCoordinator.didRestore else { return }
+        transferCoordinator.didRestore = true
         do {
             for saved in try transferQueueStore.loadTransfers() {
                 savedTransfers[saved.id] = saved
@@ -2483,7 +2519,7 @@ final class FilePierWorkspaceState: ObservableObject {
                 recentTransfers.append(.init(id: saved.id, title: saved.title,
                     detail: String(localized: "Restored from last session. Connect to \(saved.server.name) and resume manually."),
                     progress: saved.progress, status: .paused))
-                setTransferControl(.init(retryDescriptor: saved.descriptor), for: saved.id)
+                setTransferControl(.init(retryDescriptor: saved.descriptor, server: saved.server), for: saved.id)
             }
         } catch {
             transferFeedback = TransferFeedback(
@@ -2718,11 +2754,13 @@ final class FilePierWorkspaceState: ObservableObject {
         conflictPolicy: TransferConflictPolicy? = nil,
         restoring savedTransfer: SavedTransfer? = nil
     ) {
+        guard requireRemoteConnectionForTransfer() else { return }
         let remoteLocation = destinationOverride ?? remoteDropLocation(for: targetItemID) ?? remoteLocation
         if conflictPolicy == nil {
             do {
                 let conflictingNames = try uploadConflictingNames(for: sourceURLs, at: remoteLocation)
                 if !conflictingNames.isEmpty {
+                    pendingTransferSessionID = remoteSessionID
                     pendingTransferLaunch = .upload(
                         sourceURLs: sourceURLs,
                         sourcePane: sourcePane,
@@ -2752,9 +2790,9 @@ final class FilePierWorkspaceState: ObservableObject {
         let clientBox = SendableRemoteClientBox(remoteClient)
         let localSecurityScopeRootURL = savedTransfer?.localAccess.accessRootURL ?? self.localSecurityScopeRootURL
         let transferExecutionQueue = self.transferExecutionQueue
-        let maxConcurrentTransfers = self.maxConcurrentTransfers
+        let transferScheduler = transferCoordinator.scheduler
 
-        beginRemoteActivity()
+        let sessionID = beginRemoteActivity()
         remoteWorkQueue.async {
             let startedAccess = localSecurityScopeRootURL?.startAccessingSecurityScopedResource() == true
             defer { if startedAccess { localSecurityScopeRootURL?.stopAccessingSecurityScopedResource() } }
@@ -2766,8 +2804,7 @@ final class FilePierWorkspaceState: ObservableObject {
             var failureMessage: String?
             let accumulationLock = NSLock()
             let fileTransferGroup = DispatchGroup()
-            let fileTransferSemaphore = DispatchSemaphore(value: maxConcurrentTransfers)
-            let showsBatchSummary = sourceURLs.count > 1 || sourceURLs.contains(where: { ($0.hasDirectoryPath) })
+            let showsBatchSummary = sourceURLs.count > 1 || records.contains(where: \.isDirectory)
             let batchActivityID = showsBatchSummary ? UUID() : nil
             let batchDestination = remoteLocation.path
             let initialBatchTitle = sourceURLs.count == 1 ? sourceURLs[0].lastPathComponent : nil
@@ -2908,17 +2945,16 @@ final class FilePierWorkspaceState: ObservableObject {
                         .init(
                             cancellationController: cancellationController,
                             pauseController: pauseController,
-                            retryDescriptor: .uploadFile(sourceURL: sourceURL, destination: destination)
+                            retryDescriptor: .uploadFile(sourceURL: sourceURL, destination: destination),
+                            server: record.server
                         ),
                         for: activityID
                     )
                 }
 
                 fileTransferGroup.enter()
-                transferExecutionQueue.async {
-                    fileTransferSemaphore.wait()
+                transferScheduler.submit(on: transferExecutionQueue) {
                     defer {
-                        fileTransferSemaphore.signal()
                         fileTransferGroup.leave()
                     }
 
@@ -3165,11 +3201,13 @@ final class FilePierWorkspaceState: ObservableObject {
             fileTransferGroup.wait()
 
             DispatchQueue.main.async {
-                self.endRemoteActivity()
-                if let sourcePane {
-                    self.reloadDirectory(in: sourcePane, selecting: self.selectedItemID(for: sourcePane))
+                self.endRemoteActivity(for: sessionID)
+                if self.isCurrentRemoteSession(sessionID) {
+                    if let sourcePane {
+                        self.reloadDirectory(in: sourcePane, selecting: self.selectedItemID(for: sourcePane), preservingSelection: true)
+                    }
+                    self.reloadRemoteDirectoryAsync(selecting: lastCopiedItemID, preservingSelection: true)
                 }
-                self.reloadRemoteDirectoryAsync(selecting: lastCopiedItemID)
 
                         if let batchActivityID {
                             let batchStatus: TransferStatus
@@ -3188,7 +3226,8 @@ final class FilePierWorkspaceState: ObservableObject {
                                 retryDescriptor: .uploadBatch(
                                     sourceURLs: failedSourceURLs,
                                     destination: remoteLocation
-                                )
+                                ),
+                                server: records.first?.server
                             ),
                             for: batchActivityID
                         )
@@ -3222,6 +3261,7 @@ final class FilePierWorkspaceState: ObservableObject {
                     )
                 }
 
+                guard self.isCurrentRemoteSession(sessionID) else { return }
                 if let failureMessage {
                     let prefix = failedSourceURLs.count > 1
                         ? String(localized: "Upload batch completed with failures.")
@@ -3259,12 +3299,13 @@ final class FilePierWorkspaceState: ObservableObject {
         conflictPolicy: TransferConflictPolicy? = nil,
         restoring savedTransfer: SavedTransfer? = nil
     ) {
-        guard destinationPane == .local else { return }
+        guard destinationPane == .local, requireRemoteConnectionForTransfer() else { return }
         let clientBox = SendableRemoteClientBox(remoteClient)
         let localDirectoryURL = destinationDirectoryOverride ?? directoryURL(for: destinationPane, targetItemID: targetItemID)
         if conflictPolicy == nil {
             let conflictingNames = downloadConflictingNames(for: items, in: localDirectoryURL)
             if !conflictingNames.isEmpty {
+                pendingTransferSessionID = remoteSessionID
                 pendingTransferLaunch = .download(
                     items: items,
                     targetItemID: targetItemID,
@@ -3287,9 +3328,9 @@ final class FilePierWorkspaceState: ObservableObject {
         let localAccessURL = savedTransfer?.localAccess.accessRootURL ?? localAccessRoot(for: localDirectoryURL)
         let localFileTransfer = localFileTransfer
         let transferExecutionQueue = self.transferExecutionQueue
-        let maxConcurrentTransfers = self.maxConcurrentTransfers
+        let transferScheduler = transferCoordinator.scheduler
 
-        beginRemoteActivity()
+        let sessionID = beginRemoteActivity()
         remoteWorkQueue.async {
             let startedAccess = localAccessURL?.startAccessingSecurityScopedResource() == true
             defer { if startedAccess { localAccessURL?.stopAccessingSecurityScopedResource() } }
@@ -3301,7 +3342,6 @@ final class FilePierWorkspaceState: ObservableObject {
             var failureMessage: String?
             let accumulationLock = NSLock()
             let fileTransferGroup = DispatchGroup()
-            let fileTransferSemaphore = DispatchSemaphore(value: maxConcurrentTransfers)
             let showsBatchSummary = items.count > 1 || items.contains(where: \.isDirectory)
             let batchActivityID = showsBatchSummary ? UUID() : nil
             let batchDestination = localDirectoryURL.lastPathComponent
@@ -3428,7 +3468,8 @@ final class FilePierWorkspaceState: ObservableObject {
                             .init(
                                 cancellationController: cancellationController,
                                 pauseController: pauseController,
-                                retryDescriptor: .downloadFile(item: item, destinationDirectoryURL: directoryURL)
+                                retryDescriptor: .downloadFile(item: item, destinationDirectoryURL: directoryURL),
+                                server: record.server
                             ),
                             for: activityID
                         )
@@ -3475,10 +3516,8 @@ final class FilePierWorkspaceState: ObservableObject {
                         }
                     } else {
                         fileTransferGroup.enter()
-                        transferExecutionQueue.async {
-                            fileTransferSemaphore.wait()
+                        transferScheduler.submit(on: transferExecutionQueue) {
                             defer {
-                                fileTransferSemaphore.signal()
                                 fileTransferGroup.leave()
                             }
 
@@ -3671,9 +3710,11 @@ final class FilePierWorkspaceState: ObservableObject {
             fileTransferGroup.wait()
 
             DispatchQueue.main.async {
-                self.endRemoteActivity()
-                self.reloadDirectory(in: .local, selecting: lastCopiedItemID)
-                self.reloadRemoteDirectoryAsync(selecting: self.selectedRemoteItemID)
+                self.endRemoteActivity(for: sessionID)
+                if self.isCurrentRemoteSession(sessionID) {
+                    self.reloadDirectory(in: .local, selecting: lastCopiedItemID, preservingSelection: true)
+                    self.refreshRemoteDirectory()
+                }
 
                 if let batchActivityID {
                     let batchStatus: TransferStatus
@@ -3692,7 +3733,8 @@ final class FilePierWorkspaceState: ObservableObject {
                                 retryDescriptor: .downloadBatch(
                                     items: failedItems,
                                     destinationDirectoryURL: localDirectoryURL
-                                )
+                                ),
+                                server: records.first?.server
                             ),
                             for: batchActivityID
                         )
@@ -3726,6 +3768,7 @@ final class FilePierWorkspaceState: ObservableObject {
                     )
                 }
 
+                guard self.isCurrentRemoteSession(sessionID) else { return }
                 if let failureMessage {
                     let prefix = failedItems.count > 1
                         ? String(localized: "Download batch completed with failures.")
@@ -3797,7 +3840,28 @@ final class FilePierWorkspaceState: ObservableObject {
             .uniquedPreservingOrder()
     }
 
-    private func reloadDirectory(in pane: BrowserPane, selecting preferredID: BrowserItem.ID?) {
+    private func applyBrowserSelection(_ items: [BrowserItem], in pane: BrowserPane,
+                                       preferredID: BrowserItem.ID?, preserving: Bool) {
+        let availableIDs = Set(items.map(\.id))
+        let previousIDs = pane == .local ? selectedLocalItemIDs : selectedRemoteItemIDs
+        let previousPrimary = pane == .local ? selectedLocalItemID : selectedRemoteItemID
+        var ids = preserving ? previousIDs.intersection(availableIDs) : []
+        if ids.isEmpty {
+            ids = preferredID.flatMap { availableIDs.contains($0) ? [$0] : nil }
+                ?? items.first.map { [$0.id] } ?? []
+        }
+        let primary = previousPrimary.flatMap { ids.contains($0) ? $0 : nil }
+            ?? items.first(where: { ids.contains($0.id) })?.id
+        if pane == .local {
+            selectedLocalItemID = primary
+            selectedLocalItemIDs = ids
+        } else {
+            selectedRemoteItemID = primary
+            selectedRemoteItemIDs = ids
+        }
+    }
+
+    private func reloadDirectory(in pane: BrowserPane, selecting preferredID: BrowserItem.ID?, preservingSelection: Bool = false) {
         do {
             let items: [BrowserItem]
             switch pane {
@@ -3818,24 +3882,12 @@ final class FilePierWorkspaceState: ObservableObject {
                 localItems = items
                 localErrorMessage = nil
                 persistWorkspacePreferences()
-                if let preferredID, items.contains(where: { $0.id == preferredID }) {
-                    selectedLocalItemID = preferredID
-                    selectedLocalItemIDs = [preferredID]
-                } else {
-                    selectedLocalItemID = items.first?.id
-                    selectedLocalItemIDs = items.first.map { [$0.id] } ?? []
-                }
+                applyBrowserSelection(items, in: .local, preferredID: preferredID, preserving: preservingSelection)
             case .remote:
                 remoteItems = items
                 remoteErrorMessage = nil
                 if isRemoteConnected { persistWorkspacePreferences() }
-                if let preferredID, items.contains(where: { $0.id == preferredID }) {
-                    selectedRemoteItemID = preferredID
-                    selectedRemoteItemIDs = [preferredID]
-                } else {
-                    selectedRemoteItemID = items.first?.id
-                    selectedRemoteItemIDs = items.first.map { [$0.id] } ?? []
-                }
+                applyBrowserSelection(items, in: .remote, preferredID: preferredID, preserving: preservingSelection)
             }
         } catch {
             switch pane {
@@ -3853,12 +3905,13 @@ final class FilePierWorkspaceState: ObservableObject {
         }
     }
 
-    private func reloadRemoteDirectoryAsync(selecting preferredID: BrowserItem.ID?) {
+    private func reloadRemoteDirectoryAsync(selecting preferredID: BrowserItem.ID?, preservingSelection: Bool = false) {
+        guard isRemoteConnected else { return }
         let clientBox = SendableRemoteClientBox(remoteClient)
         let location = remoteLocation
         let attemptID = UUID()
-        remoteConnectionAttemptID = attemptID
-        beginRemoteActivity()
+        remoteDirectoryRequestID = attemptID
+        let sessionID = beginRemoteActivity()
 
         remoteWorkQueue.async {
             let result: Result<RemoteDirectorySnapshot, Error>
@@ -3869,8 +3922,9 @@ final class FilePierWorkspaceState: ObservableObject {
             }
 
             DispatchQueue.main.async {
-                self.endRemoteActivity()
-                guard attemptID == self.remoteConnectionAttemptID else { return }
+                self.endRemoteActivity(for: sessionID)
+                guard attemptID == self.remoteDirectoryRequestID,
+                      self.isCurrentRemoteSession(sessionID) else { return }
 
                 switch result {
                 case .success(let snapshot):
@@ -3880,13 +3934,7 @@ final class FilePierWorkspaceState: ObservableObject {
                     self.remoteItems = self.sortItems(snapshot.items, using: self.remoteBrowserSort)
                     self.remoteErrorMessage = nil
                     self.persistWorkspacePreferences()
-                    if let preferredID, self.remoteItems.contains(where: { $0.id == preferredID }) {
-                        self.selectedRemoteItemID = preferredID
-                        self.selectedRemoteItemIDs = [preferredID]
-                    } else {
-                        self.selectedRemoteItemID = self.remoteItems.first?.id
-                        self.selectedRemoteItemIDs = self.remoteItems.first.map { [$0.id] } ?? []
-                    }
+                    self.applyBrowserSelection(self.remoteItems, in: .remote, preferredID: preferredID, preserving: preservingSelection)
                 case .failure(let error):
                     self.remoteItems = []
                     self.selectedRemoteItemID = nil
@@ -3956,7 +4004,7 @@ final class FilePierWorkspaceState: ObservableObject {
         let itemName = request.itemName
         let remotePath = item.pathDescription
         let isDirectory = item.isDirectory
-        beginRemoteActivity()
+        let sessionID = beginRemoteActivity()
         remoteWorkQueue.async {
             let result: Result<Void, Error>
             do {
@@ -3972,7 +4020,8 @@ final class FilePierWorkspaceState: ObservableObject {
             }
 
             DispatchQueue.main.async {
-                self.endRemoteActivity()
+                self.endRemoteActivity(for: sessionID)
+                guard self.isCurrentRemoteSession(sessionID) else { return }
                 switch result {
                 case .success:
                     self.reloadRemoteDirectoryAsync(selecting: nil)
@@ -3990,12 +4039,30 @@ final class FilePierWorkspaceState: ObservableObject {
         }
     }
 
-    private func beginRemoteActivity() {
+    private func beginRemoteActivity() -> UUID {
         remoteActivityCount += 1
+        return remoteSessionID
     }
 
-    private func endRemoteActivity() {
+    private func endRemoteActivity(for sessionID: UUID) {
+        guard sessionID == remoteSessionID else { return }
         remoteActivityCount = max(0, remoteActivityCount - 1)
+    }
+
+    private func isCurrentRemoteSession(_ sessionID: UUID) -> Bool {
+        sessionID == remoteSessionID && isRemoteConnected
+    }
+
+    private func invalidateRemoteSessionWork() {
+        remoteSessionID = UUID()
+        remoteConnectionAttemptID = UUID()
+        remoteDirectoryRequestID = UUID()
+        remoteActivityCount = 0
+        if renameRequest?.pane == .remote { renameRequest = nil }
+        if deleteRequest?.pane == .remote { deleteRequest = nil }
+        if nonEmptyFolderDeleteRequest?.pane == .remote { nonEmptyFolderDeleteRequest = nil }
+        if createFolderRequest?.pane == .remote { createFolderRequest = nil }
+        cancelTransferConflictResolution()
     }
 
     private func setLocalDirectory(_ url: URL, securityScopeRoot: URL? = nil) {
@@ -4100,7 +4167,7 @@ final class FilePierWorkspaceState: ObservableObject {
     }
 
     private func resetRemoteSession(showFeedback: Bool, displayHost: String? = nil) {
-        remoteConnectionAttemptID = UUID()
+        invalidateRemoteSessionWork()
         remoteSessionServerID = nil
         remoteClient = MockRemoteClient(
             localFileBrowser: localFileBrowser,
@@ -4109,6 +4176,7 @@ final class FilePierWorkspaceState: ObservableObject {
         remoteLocation = remoteClient.makeInitialLocation(relativeTo: localDirectoryURL)
         remoteItems = []
         selectedRemoteItemID = nil
+        selectedRemoteItemIDs = []
         remoteErrorMessage = nil
         remoteHomePath = nil
         remotePathDraft = ""
@@ -4582,6 +4650,7 @@ extension FilePierWorkspaceState {
                 status: .completed
             )
         } else {
+            invalidateRemoteSessionWork()
             remoteErrorMessage = String(localized: "Network connection lost. Check Wi-Fi or Ethernet and reconnect.")
             remoteSessionStatus = .failed(String(localized: "Network Offline"))
             transferFeedback = TransferFeedback(

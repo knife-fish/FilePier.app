@@ -96,7 +96,7 @@ private enum RemoteDragItemCodec {
     }
 }
 
-private enum LocalDragItemCodec {
+enum LocalDragItemCodec {
     nonisolated static let itemType = UTType(exportedAs: AppConfiguration.localDragItemTypeIdentifier, conformingTo: .data)
 
     nonisolated static func encode(_ urls: [URL]) -> Data? {
@@ -383,8 +383,6 @@ struct FilePierWorkspaceView: View {
             state.handleDrop(of: items, into: .local, targetItemID: itemID)
         } onDropRemoteItemsIntoDirectory: { items, itemID in
             state.handleRemoteDrop(of: items, into: .local, targetItemID: itemID)
-        } onBeginDrag: { items in
-            state.beginLocalDrag(items: items)
         } onBeginRename: { itemID in
             state.beginRenaming(itemID: itemID, in: .local)
         } onRequestDelete: { itemID in
@@ -432,18 +430,17 @@ struct FilePierWorkspaceView: View {
         } onSelectionChange: { id in
             state.selectRemoteItem(id: id)
         } onDropLocalItems: { items in
-            state.handleDrop(of: state.resolveLocalDragURLs(fallingBackTo: items), into: .remote)
+            state.handleDrop(of: items, into: .remote)
         } onDropRemoteItems: { items in
             state.handleRemoteDrop(of: items, into: .remote)
         } onDropLocalItemsIntoDirectory: { items, itemID in
             state.handleDrop(
-                of: state.resolveLocalDragURLs(fallingBackTo: items),
+                of: items,
                 into: .remote,
                 targetItemID: itemID
             )
         } onDropRemoteItemsIntoDirectory: { items, itemID in
             state.handleRemoteDrop(of: items, into: .remote, targetItemID: itemID)
-        } onBeginDrag: { _ in
         } onBeginRename: { itemID in
             state.beginRenaming(itemID: itemID, in: .remote)
         } onRequestDelete: { itemID in
@@ -752,7 +749,6 @@ private struct BrowserPaneView: View {
     let onDropRemoteItems: ([RemoteDragItem]) -> Bool
     let onDropLocalItemsIntoDirectory: ([URL], BrowserItem.ID) -> Bool
     let onDropRemoteItemsIntoDirectory: ([RemoteDragItem], BrowserItem.ID) -> Bool
-    let onBeginDrag: ([BrowserItem]) -> Void
     let onBeginRename: (BrowserItem.ID) -> Void
     let onRequestDelete: (BrowserItem.ID) -> Void
     let onChooseDirectory: () -> Void
@@ -944,11 +940,10 @@ private struct BrowserPaneView: View {
                         .tag(item.id)
                         .onDrag {
                             let payloadItems = dragItems(initiatedBy: item)
-                            onBeginDrag(payloadItems)
                             return makeDragProvider(for: payloadItems)
                         }
                         .simultaneousGesture(TapGesture().onEnded {
-                            focusedPane = pane
+                            if focusedPane != pane { focusedPane = pane }
                         })
                         .onDrop(
                             of: [UTType.fileURL, LocalDragItemCodec.itemType, RemoteDragItemCodec.itemType, .plainText],
@@ -980,7 +975,6 @@ private struct BrowserPaneView: View {
 
                             Button(String(localized: "Refresh"), systemImage: "arrow.clockwise") {
                                 focusedPane = pane
-                                onSelectionChange(item.id)
                                 onRefresh()
                             }
                             .disabled(isBusy)
@@ -1091,7 +1085,7 @@ private struct BrowserPaneView: View {
     }
 
     private var transferActionDisabled: Bool {
-        selectedItemIDs.isEmpty || (pane == .remote && !isRemoteSessionTransferAvailable)
+        selectedItemIDs.isEmpty || !isRemoteSessionTransferAvailable
     }
 
     private var createFolderDisabled: Bool {
@@ -1202,8 +1196,7 @@ private struct BrowserPaneView: View {
         Binding(
             get: { selectedItemIDs },
             set: { updatedIDs in
-                focusedPane = pane
-                onSelectionSetChange(updatedIDs)
+                if selectedItemIDs != updatedIDs { onSelectionSetChange(updatedIDs) }
             }
         )
     }
