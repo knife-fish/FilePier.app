@@ -763,7 +763,6 @@ private struct BrowserPaneView: View {
 
     @State private var isDropTargeted = false
     @State private var targetedDirectoryItemID: BrowserItem.ID?
-    @State private var selectionAnchorItemID: BrowserItem.ID?
 
     private let primaryHeaderActionWidth: CGFloat = 148
     private let sortHeaderActionWidth: CGFloat = 88
@@ -815,36 +814,32 @@ private struct BrowserPaneView: View {
                         .frame(width: primaryHeaderActionWidth, alignment: .trailing)
 
                         Menu {
-                            ForEach(BrowserSortField.allCases, id: \.self) { field in
-                                Button {
-                                    onSortChange(.init(field: field, ascending: sortOption.ascending))
-                                } label: {
-                                    Label(
-                                        field.title,
-                                        systemImage: sortOption.field == field ? "checkmark" : "circle"
-                                    )
+                            Picker(selection: Binding(
+                                get: { sortOption.field },
+                                set: { onSortChange(.init(field: $0, ascending: sortOption.ascending)) }
+                            )) {
+                                ForEach(BrowserSortField.allCases, id: \.self) { field in
+                                    Text(field.title).tag(field)
                                 }
+                            } label: {
+                                Text(String(localized: "Sort"))
                             }
+                            .pickerStyle(.inline)
+                            .labelsHidden()
 
                             Divider()
 
-                            Button {
-                                onSortChange(.init(field: sortOption.field, ascending: true))
+                            Picker(selection: Binding(
+                                get: { sortOption.ascending },
+                                set: { onSortChange(.init(field: sortOption.field, ascending: $0)) }
+                            )) {
+                                Text(String(localized: "Ascending")).tag(true)
+                                Text(String(localized: "Descending")).tag(false)
                             } label: {
-                                Label(
-                                    String(localized: "Ascending"),
-                                    systemImage: sortOption.ascending ? "checkmark" : "arrow.up"
-                                )
+                                Text(String(localized: "Sort"))
                             }
-
-                            Button {
-                                onSortChange(.init(field: sortOption.field, ascending: false))
-                            } label: {
-                                Label(
-                                    String(localized: "Descending"),
-                                    systemImage: sortOption.ascending ? "arrow.down" : "checkmark"
-                                )
-                            }
+                            .pickerStyle(.inline)
+                            .labelsHidden()
                         } label: {
                             Label(String(localized: "Sort"), systemImage: "arrow.up.arrow.down.circle")
                         }
@@ -953,7 +948,7 @@ private struct BrowserPaneView: View {
                             return makeDragProvider(for: payloadItems)
                         }
                         .simultaneousGesture(TapGesture().onEnded {
-                            handlePrimaryClick(on: item.id)
+                            focusedPane = pane
                         })
                         .onDrop(
                             of: [UTType.fileURL, LocalDragItemCodec.itemType, RemoteDragItemCodec.itemType, .plainText],
@@ -1012,6 +1007,8 @@ private struct BrowserPaneView: View {
                             }
                         }
                         .highPriorityGesture(TapGesture(count: 2).onEnded {
+                            let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+                            guard modifiers.intersection([.command, .control, .shift]).isEmpty else { return }
                             focusedPane = pane
                             onSelectionChange(item.id)
                             if item.isDirectory {
@@ -1021,6 +1018,7 @@ private struct BrowserPaneView: View {
                     }
                 }
                 .listStyle(.inset(alternatesRowBackgrounds: true))
+                .background(BrowserSelectionModifierBridge())
                 .accessibilityIdentifier(pane == .local ? "local-browser-list" : "remote-browser-list")
                 .onDrop(of: [UTType.fileURL, LocalDragItemCodec.itemType, RemoteDragItemCodec.itemType, .plainText], isTargeted: $isDropTargeted) { providers in
                     focusedPane = pane
@@ -1205,17 +1203,7 @@ private struct BrowserPaneView: View {
             get: { selectedItemIDs },
             set: { updatedIDs in
                 focusedPane = pane
-                if updatedIDs.isEmpty {
-                    selectionAnchorItemID = nil
-                    onSelectionSetChange([])
-                } else {
-                    if let selectedItemID, updatedIDs.contains(selectedItemID) {
-                        selectionAnchorItemID = selectedItemID
-                    } else {
-                        selectionAnchorItemID = items.first(where: { updatedIDs.contains($0.id) })?.id
-                    }
-                    onSelectionSetChange(updatedIDs)
-                }
+                onSelectionSetChange(updatedIDs)
             }
         )
     }
@@ -1264,54 +1252,6 @@ private struct BrowserPaneView: View {
         }
 
         return false
-    }
-
-    private func handlePrimaryClick(on itemID: BrowserItem.ID) {
-        focusedPane = pane
-
-        let modifierFlags = NSApp.currentEvent?.modifierFlags.intersection(.deviceIndependentFlagsMask) ?? []
-        let commandPressed = modifierFlags.contains(.command)
-        let shiftPressed = modifierFlags.contains(.shift)
-
-        if shiftPressed {
-            let anchorID = selectionAnchorItemID ?? selectedItemID ?? itemID
-            let selectedRange = contiguousSelection(from: anchorID, to: itemID)
-
-            if commandPressed {
-                onSelectionSetChange(selectedItemIDs.union(selectedRange))
-            } else {
-                onSelectionSetChange(selectedRange)
-            }
-            return
-        }
-
-        if commandPressed {
-            var updatedIDs = selectedItemIDs
-            if updatedIDs.contains(itemID) {
-                updatedIDs.remove(itemID)
-            } else {
-                updatedIDs.insert(itemID)
-            }
-            selectionAnchorItemID = itemID
-            onSelectionSetChange(updatedIDs)
-            return
-        }
-
-        selectionAnchorItemID = itemID
-        onSelectionChange(itemID)
-    }
-
-    private func contiguousSelection(from anchorID: BrowserItem.ID, to itemID: BrowserItem.ID) -> Set<BrowserItem.ID> {
-        guard
-            let anchorIndex = items.firstIndex(where: { $0.id == anchorID }),
-            let itemIndex = items.firstIndex(where: { $0.id == itemID })
-        else {
-            return [itemID]
-        }
-
-        let lowerBound = min(anchorIndex, itemIndex)
-        let upperBound = max(anchorIndex, itemIndex)
-        return Set(items[lowerBound...upperBound].map(\.id))
     }
 
     private func makeDragProvider(for dragItems: [BrowserItem]) -> NSItemProvider {
@@ -2073,27 +2013,31 @@ private struct ToolbarContentView: ToolbarContent {
             .help(String(localized: "Show less common file and workspace actions."))
 
             Menu {
-                ForEach(BrowserDensityMode.allCases, id: \.self) { mode in
-                    Button {
-                        state.setBrowserDensity(mode)
-                    } label: {
-                        Label(mode.title, systemImage: state.browserDensity == mode ? "checkmark" : mode.systemImage)
+                Picker(String(localized: "View"), selection: Binding(
+                    get: { state.browserDensity },
+                    set: { state.setBrowserDensity($0) }
+                )) {
+                    ForEach(BrowserDensityMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
                     }
                 }
+                .pickerStyle(.inline)
+                .labelsHidden()
 
                 Divider()
 
                 Menu(String(localized: "Transfer Concurrency")) {
-                    ForEach(1...6, id: \.self) { value in
-                        Button {
-                            state.setMaxConcurrentTransfers(value)
-                        } label: {
-                            Label(
-                                value == 1 ? String(localized: "1 transfer") : String(localized: "\(value) transfers"),
-                                systemImage: state.maxConcurrentTransfers == value ? "checkmark" : "circle"
-                            )
+                    Picker(String(localized: "Transfer Concurrency"), selection: Binding(
+                        get: { state.maxConcurrentTransfers },
+                        set: { state.setMaxConcurrentTransfers($0) }
+                    )) {
+                        ForEach(1...6, id: \.self) { value in
+                            Text(value == 1 ? String(localized: "1 transfer") : String(localized: "\(value) transfers"))
+                                .tag(value)
                         }
                     }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
                 }
             } label: {
                 Label(String(localized: "View"), systemImage: "rectangle.3.group")

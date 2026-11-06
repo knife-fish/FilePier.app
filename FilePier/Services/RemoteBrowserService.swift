@@ -1,6 +1,6 @@
 import Foundation
 
-struct RemoteLocation: Hashable {
+struct RemoteLocation: Hashable, Codable {
     let id: String
     let path: String
     let remotePath: String
