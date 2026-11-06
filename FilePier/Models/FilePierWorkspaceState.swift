@@ -286,7 +286,7 @@ struct FavoritePlaceRenameRequest: Identifiable, Equatable {
     var proposedName: String
 }
 
-enum FileKind: String, CaseIterable {
+enum FileKind: String, CaseIterable, Codable {
     case folder
     case image
     case archive
@@ -294,7 +294,7 @@ enum FileKind: String, CaseIterable {
     case code
 }
 
-struct BrowserItem: Identifiable, Hashable {
+struct BrowserItem: Identifiable, Hashable, Codable {
     let id: String
     let name: String
     let kind: FileKind
@@ -348,7 +348,7 @@ enum TransferStatus: String, CaseIterable {
     }
 }
 
-enum TransferConflictPolicy: String {
+enum TransferConflictPolicy: String, Codable {
     case rename
     case overwrite
 }
@@ -376,7 +376,7 @@ struct TransferActivity: Identifiable, Hashable {
     }
 }
 
-private enum TransferRetryDescriptor {
+enum TransferRetryDescriptor: Codable {
     case uploadFile(sourceURL: URL, destination: RemoteLocation)
     case downloadFile(item: BrowserItem, destinationDirectoryURL: URL)
     case uploadBatch(sourceURLs: [URL], destination: RemoteLocation)
@@ -642,6 +642,12 @@ final class FilePierWorkspaceState: ObservableObject {
     private let savedServerStore: any SavedServerStore
     private let favoritePlaceStore: any FavoritePlaceStore
     private let workspacePreferenceStore: any WorkspacePreferenceStore
+    private let transferQueueStore: any TransferQueueStore
+    private var workspacePreferences: WorkspacePreferences
+    private var savedTransfers: [UUID: SavedTransfer] = [:]
+    private var restoredTransferIDs: Set<UUID> = []
+    private var lastTransferQueueSave = Date.distantPast
+    private var sessionServer: ServerProfile?
     private let siteUsageStore: any SiteUsageStore
     private let credentialStore: any ServerCredentialStore
     private let networkMonitor: (any NetworkReachabilityMonitoring)?
@@ -675,7 +681,7 @@ final class FilePierWorkspaceState: ObservableObject {
         let initialServers = Self.loadInitialServers(savedServerStore: savedServerStore)
         let initialPreferences = Self.loadInitialWorkspacePreferences(workspacePreferenceStore: workspacePreferenceStore)
         let initialSiteUsage = Self.loadInitialSiteUsage(siteUsageStore: siteUsageStore)
-        let initialSelectedServer = initialServers.first
+        let initialSelectedServer = initialServers.first { $0.id == initialPreferences.lastConnectedServerID } ?? initialServers.first
         let initialConnectionDraft = Self.makeConnectionDraft(
             for: initialSelectedServer,
             credentialStore: credentialStore
@@ -685,6 +691,8 @@ final class FilePierWorkspaceState: ObservableObject {
         self.savedServerStore = savedServerStore
         self.favoritePlaceStore = favoritePlaceStore
         self.workspacePreferenceStore = workspacePreferenceStore
+        self.workspacePreferences = initialPreferences
+        self.transferQueueStore = JSONTransferQueueStore()
         self.siteUsageStore = siteUsageStore
         self.credentialStore = credentialStore
         self.networkMonitor = networkMonitor
@@ -719,6 +727,8 @@ final class FilePierWorkspaceState: ObservableObject {
         self.selectedRemoteItemIDs = []
 
         establishLocalDirectoryAccess(at: initialDirectory)
+        restoreLocalDirectory(initialPreferences.lastLocalDirectory)
+        restoreTransferQueue()
         configureNetworkMonitor()
         reloadDirectory(in: .local, selecting: nil)
         reloadDirectory(in: .remote, selecting: nil)
@@ -733,6 +743,7 @@ final class FilePierWorkspaceState: ObservableObject {
         savedServerStore: (any SavedServerStore)? = nil,
         favoritePlaceStore: (any FavoritePlaceStore)? = nil,
         workspacePreferenceStore: (any WorkspacePreferenceStore)? = nil,
+        transferQueueStore: any TransferQueueStore = InMemoryTransferQueueStore(),
         siteUsageStore: (any SiteUsageStore)? = nil,
         credentialStore: (any ServerCredentialStore)? = nil,
         networkMonitor: (any NetworkReachabilityMonitoring)? = nil,
@@ -741,13 +752,13 @@ final class FilePierWorkspaceState: ObservableObject {
     ) {
         let resolvedSavedServerStore = savedServerStore ?? JSONSavedServerStore()
         let resolvedFavoritePlaceStore = favoritePlaceStore ?? JSONFavoritePlaceStore()
-        let resolvedWorkspacePreferenceStore = workspacePreferenceStore ?? JSONWorkspacePreferenceStore()
+        let resolvedWorkspacePreferenceStore = workspacePreferenceStore ?? InMemoryWorkspacePreferenceStore()
         let resolvedSiteUsageStore = siteUsageStore ?? JSONSiteUsageStore()
         let resolvedCredentialStore = credentialStore ?? KeychainServerCredentialStore()
         let initialServers = Self.loadInitialServers(savedServerStore: resolvedSavedServerStore)
         let initialPreferences = Self.loadInitialWorkspacePreferences(workspacePreferenceStore: resolvedWorkspacePreferenceStore)
         let initialSiteUsage = Self.loadInitialSiteUsage(siteUsageStore: resolvedSiteUsageStore)
-        let initialSelectedServer = initialServers.first
+        let initialSelectedServer = initialServers.first { $0.id == initialPreferences.lastConnectedServerID } ?? initialServers.first
         let initialConnectionDraft = Self.makeConnectionDraft(
             for: initialSelectedServer,
             credentialStore: resolvedCredentialStore
@@ -757,6 +768,8 @@ final class FilePierWorkspaceState: ObservableObject {
         self.savedServerStore = resolvedSavedServerStore
         self.favoritePlaceStore = resolvedFavoritePlaceStore
         self.workspacePreferenceStore = resolvedWorkspacePreferenceStore
+        self.workspacePreferences = initialPreferences
+        self.transferQueueStore = transferQueueStore
         self.siteUsageStore = resolvedSiteUsageStore
         self.credentialStore = resolvedCredentialStore
         self.networkMonitor = networkMonitor
@@ -794,6 +807,8 @@ final class FilePierWorkspaceState: ObservableObject {
         self.selectedRemoteItemIDs = []
 
         establishLocalDirectoryAccess(at: initialLocalDirectoryURL)
+        restoreLocalDirectory(initialPreferences.lastLocalDirectory)
+        restoreTransferQueue()
         configureNetworkMonitor()
         reloadDirectory(in: .local, selecting: nil)
         reloadDirectory(in: .remote, selecting: nil)
@@ -1190,7 +1205,7 @@ final class FilePierWorkspaceState: ObservableObject {
     func canCancelTransferActivity(_ id: UUID) -> Bool {
         guard let activity = recentTransfers.first(where: { $0.id == id }) else { return false }
         guard activity.status == .queued || activity.status == .running || activity.status == .paused else { return false }
-        return transferControls[id]?.cancellationController != nil
+        return restoredTransferIDs.contains(id) || transferControls[id]?.cancellationController != nil
     }
 
     func canPauseTransferActivity(_ id: UUID) -> Bool {
@@ -1203,7 +1218,7 @@ final class FilePierWorkspaceState: ObservableObject {
     func canResumeTransferActivity(_ id: UUID) -> Bool {
         guard let activity = recentTransfers.first(where: { $0.id == id }) else { return false }
         guard activity.status == .paused else { return false }
-        return transferControls[id]?.pauseController?.isPaused == true
+        return restoredTransferIDs.contains(id) || transferControls[id]?.pauseController?.isPaused == true
     }
 
     var hasCompletedTransferActivities: Bool {
@@ -1256,6 +1271,10 @@ final class FilePierWorkspaceState: ObservableObject {
 
     func resumeTransferActivity(_ id: UUID) {
         guard canResumeTransferActivity(id) else { return }
+        if restoredTransferIDs.contains(id) {
+            startSavedTransfer(id)
+            return
+        }
         guard let activity = recentTransfers.first(where: { $0.id == id }) else { return }
         guard var control = transferControls[id], let pauseController = control.pauseController else { return }
 
@@ -1279,6 +1298,17 @@ final class FilePierWorkspaceState: ObservableObject {
     }
 
     func cancelTransferActivity(_ id: UUID) {
+        if restoredTransferIDs.remove(id) != nil {
+            savedTransfers[id] = nil
+            if let index = recentTransfers.firstIndex(where: { $0.id == id }) {
+                let activity = recentTransfers[index]
+                recentTransfers[index] = .init(id: id, title: activity.title,
+                    detail: String(localized: "Transfer cancelled."), progress: activity.progress, status: .cancelled)
+            }
+            clearTransferControl(for: id)
+            persistTransferQueue()
+            return
+        }
         guard let controller = transferControls[id]?.cancellationController else { return }
         controller.cancel()
         transferControls[id]?.pauseController?.resume()
@@ -1300,6 +1330,10 @@ final class FilePierWorkspaceState: ObservableObject {
     }
 
     func retryTransferActivity(_ id: UUID) {
+        if savedTransfers[id] != nil {
+            startSavedTransfer(id)
+            return
+        }
         guard let descriptor = transferControls[id]?.retryDescriptor else { return }
 
         switch descriptor {
@@ -1316,7 +1350,18 @@ final class FilePierWorkspaceState: ObservableObject {
                 )
                 return
             }
-            uploadLocalItems(existingURLs, from: nil, destinationOverride: destination)
+            for url in existingURLs {
+                if let saved = savedTransfers.values.first(where: {
+                    if case .uploadFile(let source, let target) = $0.descriptor {
+                        return source == url && target == destination
+                    }
+                    return false
+                }) {
+                    startSavedTransfer(saved.id)
+                } else {
+                    uploadLocalItems([url], from: nil, destinationOverride: destination)
+                }
+            }
         case .downloadBatch(let items, let destinationDirectoryURL):
             guard FileManager.default.fileExists(atPath: destinationDirectoryURL.path(percentEncoded: false)) else {
                 transferFeedback = TransferFeedback(
@@ -1326,7 +1371,18 @@ final class FilePierWorkspaceState: ObservableObject {
                 return
             }
             guard !items.isEmpty else { return }
-            downloadRemoteItems(items, to: .local, destinationDirectoryOverride: destinationDirectoryURL)
+            for item in items {
+                if let saved = savedTransfers.values.first(where: {
+                    if case .downloadFile(let source, let target) = $0.descriptor {
+                        return source.id == item.id && target == destinationDirectoryURL
+                    }
+                    return false
+                }) {
+                    startSavedTransfer(saved.id)
+                } else {
+                    downloadRemoteItems([item], to: .local, destinationDirectoryOverride: destinationDirectoryURL)
+                }
+            }
         }
     }
 
@@ -1672,6 +1728,7 @@ final class FilePierWorkspaceState: ObservableObject {
         }
 
         let resolvedServer = makeResolvedServer()
+        sessionServer = resolvedServer
         remoteSessionServerID = resolvedServer.id
         remoteSessionStatus = .connecting
         let resolvedHost = connectionDraft.host.isEmpty ? resolvedServer.endpoint : connectionDraft.host
@@ -1705,26 +1762,23 @@ final class FilePierWorkspaceState: ObservableObject {
         let attemptID = UUID()
         remoteConnectionAttemptID = attemptID
         let clientBox = SendableRemoteClientBox(services.client)
-        let fallbackLocation = preservedRemoteLocation(for: services.client)
-        let shouldTryFallbackLocation = resolvedServer.defaultRemotePath != nil && fallbackLocation != nextLocation
+        var connectionLocations = [nextLocation]
+        if let path = resolvedServer.defaultRemotePath {
+            connectionLocations.append(services.client.makeLocation(for: URL(fileURLWithPath: path, isDirectory: true)))
+        }
+        connectionLocations.append(services.client.makeInitialLocation(relativeTo: localDirectoryURL))
+        let locations = connectionLocations.uniquedPreservingOrder()
         beginRemoteActivity()
 
         remoteWorkQueue.async {
-            let result: Result<(RemoteDirectorySnapshot, RemoteLocation), Error>
-            do {
+            var result: Result<RemoteDirectorySnapshot, Error> = .failure(CocoaError(.fileNoSuchFile))
+            for location in locations {
                 do {
-                    let snapshot = try clientBox.client.loadDirectorySnapshot(in: nextLocation)
-                    result = .success((snapshot, nextLocation))
+                    result = .success(try clientBox.client.loadDirectorySnapshot(in: location))
+                    break
                 } catch {
-                    if shouldTryFallbackLocation {
-                        let fallbackSnapshot = try clientBox.client.loadDirectorySnapshot(in: fallbackLocation)
-                        result = .success((fallbackSnapshot, fallbackLocation))
-                    } else {
-                        result = .failure(error)
-                    }
+                    result = .failure(error)
                 }
-            } catch {
-                result = .failure(error)
             }
 
             DispatchQueue.main.async {
@@ -1732,9 +1786,14 @@ final class FilePierWorkspaceState: ObservableObject {
                 guard attemptID == self.remoteConnectionAttemptID else { return }
 
                 switch result {
-                case .success(let payload):
-                    let snapshot = payload.0
-                    if let configuredLocalDirectoryURL = self.configuredLocalDirectoryURL(for: resolvedServer) {
+                case .success(let snapshot):
+                    let rememberedWorkspace = self.workspacePreferences.serverWorkspaces[resolvedServer.id]
+                    if let rememberedWorkspace {
+                        self.localBrowserSort = rememberedWorkspace.localBrowserSort
+                        self.remoteBrowserSort = rememberedWorkspace.remoteBrowserSort
+                    }
+                    if !self.restoreLocalDirectory(rememberedWorkspace?.localDirectory),
+                       let configuredLocalDirectoryURL = self.configuredLocalDirectoryURL(for: resolvedServer) {
                         self.setLocalDirectory(
                             configuredLocalDirectoryURL.standardizedFileURL,
                             securityScopeRoot: configuredLocalDirectoryURL.standardizedFileURL
@@ -1744,10 +1803,14 @@ final class FilePierWorkspaceState: ObservableObject {
                     self.remoteLocation = snapshot.location
                     self.remoteHomePath = snapshot.homePath
                     self.remotePathDraft = snapshot.location.remotePath
-                    self.remoteItems = snapshot.items
+                    self.remoteItems = self.sortItems(snapshot.items, using: self.remoteBrowserSort)
+                    self.localItems = self.sortItems(self.localItems, using: self.localBrowserSort)
                     self.remoteErrorMessage = nil
-                    self.selectedRemoteItemID = snapshot.items.first?.id
+                    self.selectedRemoteItemID = self.remoteItems.first?.id
+                    self.selectedRemoteItemIDs = self.remoteItems.first.map { [$0.id] } ?? []
                     self.remoteSessionStatus = .connected("\(resolvedUsername)@\(resolvedHost)")
+                    self.workspacePreferences.lastConnectedServerID = resolvedServer.id
+                    self.persistWorkspacePreferences()
                     self.recordSuccessfulConnection(
                         for: resolvedServer,
                         summary: "\(resolvedUsername)@\(resolvedHost)"
@@ -1784,6 +1847,9 @@ final class FilePierWorkspaceState: ObservableObject {
     }
 
     private func initialRemoteLocation(for server: ServerProfile, client: any RemoteClient) -> RemoteLocation {
+        if let path = workspacePreferences.serverWorkspaces[server.id]?.remotePath, !path.isEmpty {
+            return client.makeLocation(for: URL(fileURLWithPath: path, isDirectory: true))
+        }
         if let defaultRemotePath = server.defaultRemotePath, !defaultRemotePath.isEmpty {
             return client.makeLocation(for: URL(fileURLWithPath: defaultRemotePath, isDirectory: true))
         }
@@ -2409,6 +2475,110 @@ final class FilePierWorkspaceState: ObservableObject {
         }
     }
 
+    private func restoreTransferQueue() {
+        do {
+            for saved in try transferQueueStore.loadTransfers() {
+                savedTransfers[saved.id] = saved
+                restoredTransferIDs.insert(saved.id)
+                recentTransfers.append(.init(id: saved.id, title: saved.title,
+                    detail: String(localized: "Restored from last session. Connect to \(saved.server.name) and resume manually."),
+                    progress: saved.progress, status: .paused))
+                setTransferControl(.init(retryDescriptor: saved.descriptor), for: saved.id)
+            }
+        } catch {
+            transferFeedback = TransferFeedback(
+                message: String(localized: "Restore transfer queue failed: \(error.localizedDescription)"), status: .failed)
+        }
+    }
+
+    private func persistTransferQueue(force: Bool = true) {
+        guard force || Date().timeIntervalSince(lastTransferQueueSave) >= 0.5 else { return }
+        do {
+            try transferQueueStore.saveTransfers(savedTransfers.values.sorted { $0.createdAt > $1.createdAt })
+            lastTransferQueueSave = Date()
+        } catch {
+            transferFeedback = TransferFeedback(
+                message: String(localized: "Save transfer queue failed: \(error.localizedDescription)"), status: .failed)
+        }
+    }
+
+    private func planUploads(_ urls: [URL], to destination: RemoteLocation,
+                             server: TransferServerIdentity, access: SavedLocalDirectory?,
+                             policy: TransferConflictPolicy, replacing parentID: UUID? = nil) -> [SavedTransfer] {
+        let records = urls.map { url in
+            SavedTransfer(id: UUID(), title: url.lastPathComponent, server: server,
+                localAccess: access ?? SavedLocalDirectory(url: url, accessRootURL: localAccessRoot(for: url)),
+                descriptor: .uploadFile(sourceURL: url, destination: destination), conflictPolicy: policy,
+                isDirectory: (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true)
+        }
+        for record in records { savedTransfers[record.id] = record }
+        if let parentID { savedTransfers[parentID] = nil }
+        persistTransferQueue()
+        return records
+    }
+
+    private func planDownloads(_ items: [BrowserItem], into directory: URL,
+                               server: TransferServerIdentity, access: SavedLocalDirectory,
+                               policy: TransferConflictPolicy, replacing parentID: UUID? = nil) -> [SavedTransfer] {
+        let records = items.map { item in
+            SavedTransfer(id: UUID(), title: item.name, server: server, localAccess: access,
+                descriptor: .downloadFile(item: item, destinationDirectoryURL: directory),
+                conflictPolicy: policy, isDirectory: item.isDirectory)
+        }
+        for record in records { savedTransfers[record.id] = record }
+        if let parentID { savedTransfers[parentID] = nil }
+        persistTransferQueue()
+        return records
+    }
+
+    private func localAccessRoot(for url: URL) -> URL? {
+        guard let root = localSecurityScopeRootURL,
+              url.standardizedFileURL.pathComponents.starts(with: root.standardizedFileURL.pathComponents) else { return nil }
+        return root
+    }
+
+    private func startSavedTransfer(_ id: UUID) {
+        guard let saved = savedTransfers[id] else { return }
+        guard isRemoteConnected, let server = sessionServer ?? selectedServer, saved.server.matches(server) else {
+            transferFeedback = TransferFeedback(
+                message: String(localized: "Connect to \(saved.server.name) before resuming this transfer."), status: .failed)
+            return
+        }
+        let root = saved.localAccess.accessRootURL
+        let started = root.startAccessingSecurityScopedResource()
+        defer { if started { root.stopAccessingSecurityScopedResource() } }
+        let requiredLocalURL: URL
+        switch saved.descriptor {
+        case .uploadFile(let source, _): requiredLocalURL = source
+        case .downloadFile(_, let destination): requiredLocalURL = destination
+        case .uploadBatch, .downloadBatch: return
+        }
+        guard FileManager.default.fileExists(atPath: requiredLocalURL.path) else {
+            transferFeedback = TransferFeedback(
+                message: String(localized: "The local file or folder for this transfer is no longer available."), status: .failed)
+            return
+        }
+        restoredTransferIDs.remove(id)
+        recentTransfers.removeAll { $0.id == id }
+        clearTransferControl(for: id)
+        switch saved.descriptor {
+        case .uploadFile(let url, let destination):
+            uploadLocalItems([url], from: nil, destinationOverride: destination,
+                             conflictPolicy: saved.conflictPolicy, restoring: saved)
+        case .downloadFile(let item, let directory):
+            downloadRemoteItems([item], to: .local, destinationDirectoryOverride: directory,
+                                conflictPolicy: saved.conflictPolicy, restoring: saved)
+        case .uploadBatch, .downloadBatch:
+            break // Queue persistence records individual files and pending directory enumerations.
+        }
+    }
+
+    private func finishPreparedDirectory(_ id: UUID) {
+        guard let activity = recentTransfers.first(where: { $0.id == id }) else { return }
+        replaceTransferActivity(id: id, with: .init(id: id, title: activity.title,
+            detail: activity.detail, progress: 1, status: .completed))
+    }
+
     private func prependTransferActivity(_ activity: TransferActivity) {
         recentTransfers.insert(activity, at: 0)
         trimTransferHistory()
@@ -2423,6 +2593,14 @@ final class FilePierWorkspaceState: ObservableObject {
            updatedActivity.status == .running,
            transferControls[id]?.pauseController?.isPaused == true { return }
         recentTransfers[index] = updatedActivity
+        if var saved = savedTransfers[id] {
+            if updatedActivity.status != .failed { saved.progress = updatedActivity.progress }
+            savedTransfers[id] = saved
+            if updatedActivity.status == .cancelled || (updatedActivity.status == .completed && !saved.isDirectory) {
+                savedTransfers[id] = nil
+            }
+            persistTransferQueue(force: updatedActivity.status != .running)
+        }
         trimTransferHistory()
     }
 
@@ -2537,7 +2715,8 @@ final class FilePierWorkspaceState: ObservableObject {
         from sourcePane: BrowserPane?,
         targetItemID: BrowserItem.ID? = nil,
         destinationOverride: RemoteLocation? = nil,
-        conflictPolicy: TransferConflictPolicy? = nil
+        conflictPolicy: TransferConflictPolicy? = nil,
+        restoring savedTransfer: SavedTransfer? = nil
     ) {
         let remoteLocation = destinationOverride ?? remoteDropLocation(for: targetItemID) ?? remoteLocation
         if conflictPolicy == nil {
@@ -2567,13 +2746,18 @@ final class FilePierWorkspaceState: ObservableObject {
         }
 
         let resolvedConflictPolicy = conflictPolicy ?? .rename
+        let records = savedTransfer.map { [$0] } ?? planUploads(sourceURLs, to: remoteLocation,
+            server: TransferServerIdentity(sessionServer ?? selectedServer ?? makeResolvedServer()),
+            access: nil, policy: resolvedConflictPolicy)
         let clientBox = SendableRemoteClientBox(remoteClient)
-        let localSecurityScopeRootURL = self.localSecurityScopeRootURL
+        let localSecurityScopeRootURL = savedTransfer?.localAccess.accessRootURL ?? self.localSecurityScopeRootURL
         let transferExecutionQueue = self.transferExecutionQueue
         let maxConcurrentTransfers = self.maxConcurrentTransfers
 
         beginRemoteActivity()
         remoteWorkQueue.async {
+            let startedAccess = localSecurityScopeRootURL?.startAccessingSecurityScopedResource() == true
+            defer { if startedAccess { localSecurityScopeRootURL?.stopAccessingSecurityScopedResource() } }
             var lastCopiedItemID: BrowserItem.ID?
             var copiedNames: [String] = []
             var renamedNames: [String] = []
@@ -2703,8 +2887,8 @@ final class FilePierWorkspaceState: ObservableObject {
                 }
             }
 
-            func enqueueUploadFile(at sourceURL: URL, to destination: RemoteLocation) {
-                let activityID = UUID()
+            func enqueueUploadFile(at sourceURL: URL, to destination: RemoteLocation, record: SavedTransfer) {
+                let activityID = record.id
                 let sourceName = sourceURL.lastPathComponent
                 let cancellationController = TransferCancellationController()
                 let pauseController = TransferPauseController()
@@ -2897,10 +3081,10 @@ final class FilePierWorkspaceState: ObservableObject {
                 }
             }
 
-            func uploadTree(at sourceURL: URL, to destination: RemoteLocation) throws {
+            func uploadTree(at sourceURL: URL, to destination: RemoteLocation, record: SavedTransfer) throws {
                 let resourceValues = try sourceURL.resourceValues(forKeys: [.isDirectoryKey])
                 if resourceValues.isDirectory == true {
-                    let activityID = UUID()
+                    let activityID = record.id
                     let directoryName = sourceURL.lastPathComponent
                     recordQueuedBatchItem()
                     DispatchQueue.main.async {
@@ -2915,12 +3099,19 @@ final class FilePierWorkspaceState: ObservableObject {
                         )
                     }
 
-                    let mutation = try clientBox.client.createDirectory(
-                        named: directoryName,
-                        in: destination,
-                        conflictPolicy: resolvedConflictPolicy
-                    )
+                    let mutation: RemoteMutationResult
+                    if let prepared = record.preparedRemoteDirectory {
+                        mutation = RemoteMutationResult(remoteItemID: prepared.remotePath,
+                            destinationName: URL(fileURLWithPath: prepared.remotePath).lastPathComponent)
+                    } else {
+                        mutation = try clientBox.client.createDirectory(named: directoryName, in: destination,
+                            conflictPolicy: resolvedConflictPolicy)
+                    }
                     let nestedLocation = clientBox.client.makeLocation(for: URL(fileURLWithPath: mutation.remoteItemID))
+                    DispatchQueue.main.sync {
+                        self.savedTransfers[activityID]?.preparedRemoteDirectory = nestedLocation
+                        self.persistTransferQueue()
+                    }
                     recordSuccess(
                         name: mutation.destinationName,
                         renamed: mutation.destinationName != directoryName,
@@ -2935,7 +3126,7 @@ final class FilePierWorkspaceState: ObservableObject {
                                 title: mutation.destinationName,
                                 detail: String(localized: "Created folder on Remote"),
                                 progress: 1.0,
-                                status: .completed
+                                status: .running
                             )
                         )
                     }
@@ -2943,18 +3134,24 @@ final class FilePierWorkspaceState: ObservableObject {
                     let childURLs = try withScopedLocalAccess(sourceURL) {
                         try sortedChildURLs(in: sourceURL)
                     }
-                    for childURL in childURLs {
-                        try uploadTree(at: childURL, to: nestedLocation)
+                    let children = DispatchQueue.main.sync {
+                        let children = self.planUploads(childURLs, to: nestedLocation, server: record.server,
+                            access: record.localAccess, policy: resolvedConflictPolicy, replacing: activityID)
+                        self.finishPreparedDirectory(activityID)
+                        return children
+                    }
+                    for (childURL, childRecord) in zip(childURLs, children) {
+                        try uploadTree(at: childURL, to: nestedLocation, record: childRecord)
                     }
                     return
                 }
 
-                enqueueUploadFile(at: sourceURL, to: destination)
+                enqueueUploadFile(at: sourceURL, to: destination, record: record)
             }
 
-            for sourceURL in sourceURLs {
+            for (sourceURL, record) in zip(sourceURLs, records) {
                 do {
-                    try uploadTree(at: sourceURL, to: remoteLocation)
+                    try uploadTree(at: sourceURL, to: remoteLocation, record: record)
                 } catch {
                     if isTransferCancellationError(error) {
                         recordCancellation(name: sourceURL.lastPathComponent)
@@ -3059,7 +3256,8 @@ final class FilePierWorkspaceState: ObservableObject {
         to destinationPane: BrowserPane,
         targetItemID: BrowserItem.ID? = nil,
         destinationDirectoryOverride: URL? = nil,
-        conflictPolicy: TransferConflictPolicy? = nil
+        conflictPolicy: TransferConflictPolicy? = nil,
+        restoring savedTransfer: SavedTransfer? = nil
     ) {
         guard destinationPane == .local else { return }
         let clientBox = SendableRemoteClientBox(remoteClient)
@@ -3082,12 +3280,19 @@ final class FilePierWorkspaceState: ObservableObject {
         }
 
         let resolvedConflictPolicy = conflictPolicy ?? .rename
+        let records = savedTransfer.map { [$0] } ?? planDownloads(items, into: localDirectoryURL,
+            server: TransferServerIdentity(sessionServer ?? selectedServer ?? makeResolvedServer()),
+            access: SavedLocalDirectory(url: localDirectoryURL, accessRootURL: localAccessRoot(for: localDirectoryURL)),
+            policy: resolvedConflictPolicy)
+        let localAccessURL = savedTransfer?.localAccess.accessRootURL ?? localAccessRoot(for: localDirectoryURL)
         let localFileTransfer = localFileTransfer
         let transferExecutionQueue = self.transferExecutionQueue
         let maxConcurrentTransfers = self.maxConcurrentTransfers
 
         beginRemoteActivity()
         remoteWorkQueue.async {
+            let startedAccess = localAccessURL?.startAccessingSecurityScopedResource() == true
+            defer { if startedAccess { localAccessURL?.stopAccessingSecurityScopedResource() } }
             var lastCopiedItemID: BrowserItem.ID?
             var copiedNames: [String] = []
             var renamedNames: [String] = []
@@ -3199,8 +3404,8 @@ final class FilePierWorkspaceState: ObservableObject {
                 refreshBatchActivity()
             }
 
-            func downloadTree(_ item: BrowserItem, into directoryURL: URL) throws {
-                let activityID = UUID()
+            func downloadTree(_ item: BrowserItem, into directoryURL: URL, record: SavedTransfer) throws {
+                let activityID = record.id
                 let activityTitle = item.name
                 let cancellationController = item.isDirectory ? nil : TransferCancellationController()
                 let pauseController = item.isDirectory ? nil : TransferPauseController()
@@ -3232,11 +3437,12 @@ final class FilePierWorkspaceState: ObservableObject {
 
                 do {
                     if item.isDirectory {
-                        let destinationURL = try localFileTransfer.createDirectory(
-                            named: item.name,
-                            in: directoryURL,
-                            conflictPolicy: resolvedConflictPolicy
-                        )
+                        let destinationURL = try record.preparedLocalDirectory ?? localFileTransfer.createDirectory(
+                            named: item.name, in: directoryURL, conflictPolicy: resolvedConflictPolicy)
+                        DispatchQueue.main.sync {
+                            self.savedTransfers[activityID]?.preparedLocalDirectory = destinationURL
+                            self.persistTransferQueue()
+                        }
                         recordSuccess(
                             name: destinationURL.lastPathComponent,
                             renamed: destinationURL.lastPathComponent != item.name,
@@ -3251,15 +3457,21 @@ final class FilePierWorkspaceState: ObservableObject {
                                     title: destinationURL.lastPathComponent,
                                     detail: String(localized: "Created folder in Local"),
                                     progress: 1.0,
-                                    status: .completed
+                                    status: .running
                                 )
                             )
                         }
 
                         let location = clientBox.client.makeLocation(for: URL(fileURLWithPath: item.pathDescription))
                         let snapshot = try clientBox.client.loadDirectorySnapshot(in: location)
-                        for child in snapshot.items {
-                            try downloadTree(child, into: destinationURL)
+                        let children = DispatchQueue.main.sync {
+                            let children = self.planDownloads(snapshot.items, into: destinationURL, server: record.server,
+                                access: record.localAccess, policy: resolvedConflictPolicy, replacing: activityID)
+                            self.finishPreparedDirectory(activityID)
+                            return children
+                        }
+                        for (child, childRecord) in zip(snapshot.items, children) {
+                            try downloadTree(child, into: destinationURL, record: childRecord)
                         }
                     } else {
                         fileTransferGroup.enter()
@@ -3443,9 +3655,9 @@ final class FilePierWorkspaceState: ObservableObject {
                 }
             }
 
-            for item in items {
+            for (item, record) in zip(items, records) {
                 do {
-                    try downloadTree(item, into: localDirectoryURL)
+                    try downloadTree(item, into: localDirectoryURL, record: record)
                 } catch {
                     if isTransferCancellationError(error) {
                         recordCancellation(name: item.name)
@@ -3605,6 +3817,7 @@ final class FilePierWorkspaceState: ObservableObject {
             case .local:
                 localItems = items
                 localErrorMessage = nil
+                persistWorkspacePreferences()
                 if let preferredID, items.contains(where: { $0.id == preferredID }) {
                     selectedLocalItemID = preferredID
                     selectedLocalItemIDs = [preferredID]
@@ -3615,6 +3828,7 @@ final class FilePierWorkspaceState: ObservableObject {
             case .remote:
                 remoteItems = items
                 remoteErrorMessage = nil
+                if isRemoteConnected { persistWorkspacePreferences() }
                 if let preferredID, items.contains(where: { $0.id == preferredID }) {
                     selectedRemoteItemID = preferredID
                     selectedRemoteItemIDs = [preferredID]
@@ -3665,6 +3879,7 @@ final class FilePierWorkspaceState: ObservableObject {
                     self.remotePathDraft = snapshot.location.remotePath
                     self.remoteItems = self.sortItems(snapshot.items, using: self.remoteBrowserSort)
                     self.remoteErrorMessage = nil
+                    self.persistWorkspacePreferences()
                     if let preferredID, self.remoteItems.contains(where: { $0.id == preferredID }) {
                         self.selectedRemoteItemID = preferredID
                         self.selectedRemoteItemIDs = [preferredID]
@@ -3788,14 +4003,8 @@ final class FilePierWorkspaceState: ObservableObject {
 
         if let securityScopeRoot {
             establishLocalDirectoryAccess(at: securityScopeRoot.standardizedFileURL)
-            syncDefaultPlaces()
-            return
-        }
-
-        guard let currentRoot = localSecurityScopeRootURL else { return }
-        let currentRootPath = currentRoot.path(percentEncoded: false)
-        let targetPath = localDirectoryURL.path(percentEncoded: false)
-        if !targetPath.hasPrefix(currentRootPath) {
+        } else if let currentRoot = localSecurityScopeRootURL,
+                  !localDirectoryURL.pathComponents.starts(with: currentRoot.standardizedFileURL.pathComponents) {
             stopLocalDirectoryAccess()
         }
         syncDefaultPlaces()
@@ -3904,7 +4113,7 @@ final class FilePierWorkspaceState: ObservableObject {
         remoteHomePath = nil
         remotePathDraft = ""
         remoteActivityCount = 0
-        transferControls.removeAll()
+        sessionServer = nil
         remoteSessionStatus = .idle
         if showFeedback {
             transferFeedback = TransferFeedback(
@@ -3914,17 +4123,37 @@ final class FilePierWorkspaceState: ObservableObject {
         }
     }
 
+    @discardableResult
+    private func restoreLocalDirectory(_ directory: SavedLocalDirectory?) -> Bool {
+        guard let directory else { return false }
+        let root = directory.accessRootURL
+        let started = root.startAccessingSecurityScopedResource()
+        defer { if started { root.stopAccessingSecurityScopedResource() } }
+        guard (try? localFileBrowser.loadItems(in: directory.url)) != nil else { return false }
+        setLocalDirectory(directory.url, securityScopeRoot: root)
+        reloadDirectory(in: .local, selecting: nil)
+        return true
+    }
+
     private func persistWorkspacePreferences() {
-        do {
-            try workspacePreferenceStore.savePreferences(
-                WorkspacePreferences(
-                    showsInspector: showsInspector,
-                    browserDensity: browserDensity,
-                    maxConcurrentTransfers: maxConcurrentTransfers,
-                    localBrowserSort: localBrowserSort,
-                    remoteBrowserSort: remoteBrowserSort
-                )
+        workspacePreferences.showsInspector = showsInspector
+        workspacePreferences.browserDensity = browserDensity
+        workspacePreferences.maxConcurrentTransfers = maxConcurrentTransfers
+        workspacePreferences.localBrowserSort = localBrowserSort
+        workspacePreferences.remoteBrowserSort = remoteBrowserSort
+        let localDirectory = SavedLocalDirectory(url: localDirectoryURL, accessRootURL: localSecurityScopeRootURL)
+        workspacePreferences.lastLocalDirectory = localDirectory
+        if isRemoteConnected, let server = sessionServer {
+            workspacePreferences.serverWorkspaces[server.id] = ServerWorkspacePreferences(
+                localDirectory: localDirectory,
+                remotePath: remoteErrorMessage == nil ? remoteLocation.remotePath
+                    : (workspacePreferences.serverWorkspaces[server.id]?.remotePath ?? server.defaultRemotePath ?? "/"),
+                localBrowserSort: localBrowserSort,
+                remoteBrowserSort: remoteBrowserSort
             )
+        }
+        do {
+            try workspacePreferenceStore.savePreferences(workspacePreferences)
         } catch {
             transferFeedback = TransferFeedback(
                 message: String(localized: "Save workspace preferences failed: \(error.localizedDescription)"),

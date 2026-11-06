@@ -1061,6 +1061,22 @@
         }
       }
     },
+    "Connect to %@ before resuming this transfer." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect to %@ before resuming this transfer."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先连接到 %@，再继续此传输。"
+          }
+        }
+      }
+    },
     "Connect to %@." : {
       "localizations" : {
         "en" : {
@@ -2358,6 +2374,12 @@
           }
         }
       }
+    },
+    "FilePier needs permission to open %@. Select a folder to grant access." : {
+
+    },
+    "FilePier needs permission to open this folder. Select a folder to grant access." : {
+
     },
     "Focused Pane" : {
       "localizations" : {
@@ -4078,6 +4100,38 @@
         }
       }
     },
+    "Restore transfer queue failed: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore transfer queue failed: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复传输队列失败：%@"
+          }
+        }
+      }
+    },
+    "Restored from last session. Connect to %@ and resume manually." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restored from last session. Connect to %@ and resume manually."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已恢复上次未完成的任务。连接到 %@ 后，请手动继续。"
+          }
+        }
+      }
+    },
     "Resume" : {
       "localizations" : {
         "en" : {
@@ -4272,6 +4326,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保存此站点，使其在后续会话中显示在侧栏里。"
+          }
+        }
+      }
+    },
+    "Save transfer queue failed: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save transfer queue failed: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存传输队列失败：%@"
           }
         }
       }
@@ -4853,6 +4923,22 @@
         }
       }
     },
+    "The local file or folder for this transfer is no longer available." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The local file or folder for this transfer is no longer available."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此传输所需的本地文件或文件夹已不可用。"
+          }
+        }
+      }
+    },
     "The requested WebDAV path was not found on the server." : {
 
     },
@@ -5055,12 +5141,6 @@
           }
         }
       }
-    },
-    "FilePier needs permission to open %@. Select a folder to grant access." : {
-
-    },
-    "FilePier needs permission to open this folder. Select a folder to grant access." : {
-
     },
     "Typed in draft" : {
       "localizations" : {

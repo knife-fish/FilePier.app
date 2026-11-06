@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import FilePier
 
-private final class TestRemoteClient: RemoteClient, @unchecked Sendable {
+final class TestRemoteClient: RemoteClient, @unchecked Sendable {
     private let localFileBrowser = LocalFileBrowserService()
     private let remoteRootURL: URL
     private let displayHost: String
@@ -3170,6 +3170,7 @@ struct FilePierTests {
 
         try await eventually(timeout: 4) {
             FileManager.default.fileExists(atPath: remoteURL.appendingPathComponent("fail.txt").path)
+                && state.remoteItems.contains(where: { $0.name == "fail.txt" })
         }
 
         try await MainActor.run {

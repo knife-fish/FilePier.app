@@ -11,6 +11,9 @@ struct WorkspacePreferences: Codable, Equatable {
     var maxConcurrentTransfers: Int
     var localBrowserSort: BrowserSortOption
     var remoteBrowserSort: BrowserSortOption
+    var lastLocalDirectory: SavedLocalDirectory?
+    var lastConnectedServerID: UUID?
+    var serverWorkspaces: [UUID: ServerWorkspacePreferences] = [:]
 
     static let `default` = WorkspacePreferences(
         showsInspector: true,
@@ -41,7 +44,50 @@ struct WorkspacePreferences: Codable, Equatable {
         maxConcurrentTransfers = try container.decodeIfPresent(Int.self, forKey: .maxConcurrentTransfers) ?? Self.default.maxConcurrentTransfers
         localBrowserSort = try container.decodeIfPresent(BrowserSortOption.self, forKey: .localBrowserSort) ?? Self.default.localBrowserSort
         remoteBrowserSort = try container.decodeIfPresent(BrowserSortOption.self, forKey: .remoteBrowserSort) ?? Self.default.remoteBrowserSort
+        lastLocalDirectory = try container.decodeIfPresent(SavedLocalDirectory.self, forKey: .lastLocalDirectory)
+        lastConnectedServerID = try container.decodeIfPresent(UUID.self, forKey: .lastConnectedServerID)
+        serverWorkspaces = try container.decodeIfPresent([UUID: ServerWorkspacePreferences].self, forKey: .serverWorkspaces) ?? [:]
     }
+}
+
+struct ServerWorkspacePreferences: Codable, Equatable {
+    var localDirectory: SavedLocalDirectory
+    var remotePath: String
+    var localBrowserSort: BrowserSortOption
+    var remoteBrowserSort: BrowserSortOption
+}
+
+/// Keep the granted ancestor as well as the browsed path so navigating into a
+/// child folder does not lose the sandbox permission on the next launch.
+struct SavedLocalDirectory: Codable, Equatable {
+    var path: String
+    var accessRootPath: String
+    var bookmarkData: Data?
+
+    init(url: URL, accessRootURL: URL? = nil) {
+        path = url.path(percentEncoded: false)
+        let root = accessRootURL ?? url
+        accessRootPath = root.path(percentEncoded: false)
+        bookmarkData = try? root.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+    }
+
+    var url: URL { URL(fileURLWithPath: path) }
+
+    var accessRootURL: URL {
+        if let bookmarkData {
+            var stale = false
+            if let resolved = try? URL(resolvingBookmarkData: bookmarkData, options: [.withSecurityScope, .withoutUI], relativeTo: nil, bookmarkDataIsStale: &stale) {
+                return resolved
+            }
+        }
+        return URL(fileURLWithPath: accessRootPath)
+    }
+}
+
+final class InMemoryWorkspacePreferenceStore: WorkspacePreferenceStore {
+    var preferences: WorkspacePreferences = .default
+    func loadPreferences() throws -> WorkspacePreferences { preferences }
+    func savePreferences(_ preferences: WorkspacePreferences) throws { self.preferences = preferences }
 }
 
 struct JSONWorkspacePreferenceStore: WorkspacePreferenceStore {
