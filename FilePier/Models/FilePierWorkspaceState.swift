@@ -1022,22 +1022,10 @@ final class FilePierWorkspaceState: ObservableObject {
             guard openLocalDirectory(url.standardizedFileURL, title: place.title) else {
                 return
             }
-            transferFeedback = TransferFeedback(
-                message: String(localized: "Opened \(place.title) in Local."),
-                status: .completed
-            )
         case .transfers:
             setShowsInspector(true)
-            transferFeedback = TransferFeedback(
-                message: String(localized: "Recent transfers are shown in the inspector."),
-                status: .completed
-            )
         case .keys:
             showsConnectionSheet = true
-            transferFeedback = TransferFeedback(
-                message: String(localized: "SSH and connection settings are managed from site configuration."),
-                status: .completed
-            )
         }
     }
 
@@ -1050,10 +1038,6 @@ final class FilePierWorkspaceState: ObservableObject {
             }
             return false
         }) else {
-            transferFeedback = TransferFeedback(
-                message: String(localized: "\(directoryURL.lastPathComponent) is already in Favorites."),
-                status: .completed
-            )
             return
         }
 
@@ -1070,10 +1054,6 @@ final class FilePierWorkspaceState: ObservableObject {
         }
 
         places.insert(favorite, at: 0)
-        transferFeedback = TransferFeedback(
-            message: String(localized: "Added \(favorite.title) to Favorites."),
-            status: .completed
-        )
     }
 
     func beginRenamingFavorite(_ place: PlaceItem) {
@@ -1130,10 +1110,6 @@ final class FilePierWorkspaceState: ObservableObject {
 
         places[index] = updatedPlace
         self.favoriteRenameRequest = nil
-        transferFeedback = TransferFeedback(
-            message: String(localized: "Renamed favorite to \(trimmedName)."),
-            status: .completed
-        )
     }
 
     func cancelFavoriteRenameRequest() {
@@ -1188,10 +1164,6 @@ final class FilePierWorkspaceState: ObservableObject {
         }
 
         places.removeAll { $0.id == place.id }
-        transferFeedback = TransferFeedback(
-            message: String(localized: "Removed \(place.title) from Favorites."),
-            status: .completed
-        )
     }
 
     func setShowsInspector(_ showsInspector: Bool) {
@@ -1555,7 +1527,7 @@ final class FilePierWorkspaceState: ObservableObject {
 
     func selectServer(_ server: ServerProfile) {
         if remoteSessionServerID != server.id && !isConnectedStatus(remoteSessionStatus) {
-            resetRemoteSession(showFeedback: false, displayHost: server.endpoint)
+            resetRemoteSession(displayHost: server.endpoint)
             transferFeedback = nil
         }
         selectedServer = server
@@ -1618,10 +1590,6 @@ final class FilePierWorkspaceState: ObservableObject {
         selectedServer = duplicate
         connectionDraft = Self.makeConnectionDraft(for: duplicate, credentialStore: credentialStore)
         hasSavedPasswordForSelectedServer = Self.hasSavedPassword(for: duplicate, credentialStore: credentialStore)
-        transferFeedback = TransferFeedback(
-            message: String(localized: "Copied site \(duplicate.name)."),
-            status: .completed
-        )
     }
 
     func requestDeleteServer(_ server: ServerProfile) {
@@ -1670,13 +1638,8 @@ final class FilePierWorkspaceState: ObservableObject {
             hasSavedPasswordForSelectedServer = Self.hasSavedPassword(for: selectedServer, credentialStore: credentialStore)
         }
         if remoteSessionServerID == server.id {
-            resetRemoteSession(showFeedback: false, displayHost: selectedServer?.endpoint)
+            resetRemoteSession(displayHost: selectedServer?.endpoint)
         }
-
-        transferFeedback = TransferFeedback(
-            message: String(localized: "Deleted site \(server.name)."),
-            status: .completed
-        )
     }
 
     @discardableResult
@@ -1744,15 +1707,11 @@ final class FilePierWorkspaceState: ObservableObject {
         selectedServer = savedServer
         connectionDraft = Self.makeConnectionDraft(for: savedServer, credentialStore: credentialStore)
         hasSavedPasswordForSelectedServer = !connectionDraft.password.isEmpty
-        transferFeedback = TransferFeedback(
-            message: String(localized: "Saved site \(savedServer.name)."),
-            status: .completed
-        )
         return savedServer
     }
 
     func disconnectRemoteSession() {
-        resetRemoteSession(showFeedback: true, displayHost: activeRemoteServer?.endpoint ?? selectedServer?.endpoint)
+        resetRemoteSession(displayHost: activeRemoteServer?.endpoint ?? selectedServer?.endpoint)
     }
 
     func beginCreatingFolderInFocusedPane() {
@@ -1762,6 +1721,9 @@ final class FilePierWorkspaceState: ObservableObject {
     }
 
     func connectRemoteSession() {
+        transferFeedback = nil
+        remoteErrorMessage = nil
+
         guard isNetworkReachable else {
             remoteSessionStatus = .failed(String(localized: "Network Offline"))
             remoteErrorMessage = String(localized: "Connect to a network before opening a remote session.")
@@ -1801,7 +1763,6 @@ final class FilePierWorkspaceState: ObservableObject {
         remoteLocation = nextLocation
         remoteHomePath = nil
         remotePathDraft = nextLocation.remotePath
-        remoteErrorMessage = nil
         remoteItems = []
         selectedRemoteItemID = nil
         selectedRemoteItemIDs = []
@@ -1864,10 +1825,6 @@ final class FilePierWorkspaceState: ObservableObject {
                         summary: "\(resolvedUsername)@\(resolvedHost)"
                     )
                     self.showsConnectionSheet = false
-                    self.transferFeedback = TransferFeedback(
-                        message: String(localized: "Connected to \(resolvedServer.name) via \(resolvedServer.connectionKind.title)."),
-                        status: .completed
-                    )
                 case .failure(let error):
                     self.remoteItems = []
                     self.selectedRemoteItemID = nil
@@ -1982,10 +1939,6 @@ final class FilePierWorkspaceState: ObservableObject {
             do {
                 let renamedURL = try localFileTransfer.renameItem(at: sourceURL, toName: renameRequest.proposedName)
                 reloadDirectory(in: renameRequest.pane, selecting: renamedURL.path(percentEncoded: false))
-                transferFeedback = TransferFeedback(
-                    message: String(localized: "Renamed \(renameRequest.originalName) to \(renamedURL.lastPathComponent)."),
-                    status: .completed
-                )
             } catch {
                 transferFeedback = TransferFeedback(
                     message: String(localized: "Rename failed: \(error.localizedDescription)"),
@@ -2016,10 +1969,6 @@ final class FilePierWorkspaceState: ObservableObject {
                     switch result {
                     case .success(let mutation):
                         self.reloadRemoteDirectoryAsync(selecting: mutation.remoteItemID)
-                        self.transferFeedback = TransferFeedback(
-                            message: String(localized: "Renamed \(originalName) to \(mutation.destinationName) on Remote."),
-                            status: .completed
-                        )
                     case .failure(let error):
                         self.transferFeedback = TransferFeedback(
                             message: String(localized: "Rename failed: \(error.localizedDescription)"),
@@ -2177,10 +2126,6 @@ final class FilePierWorkspaceState: ObservableObject {
                     in: localDirectoryURL
                 )
                 reloadDirectory(in: .local, selecting: createdURL.path(percentEncoded: false))
-                transferFeedback = TransferFeedback(
-                    message: String(localized: "Created folder \(createdURL.lastPathComponent) in Local."),
-                    status: .completed
-                )
             } catch {
                 transferFeedback = TransferFeedback(
                     message: String(localized: "Create folder failed: \(error.localizedDescription)"),
@@ -2209,10 +2154,6 @@ final class FilePierWorkspaceState: ObservableObject {
                     switch result {
                     case .success(let mutation):
                         self.reloadRemoteDirectoryAsync(selecting: mutation.remoteItemID)
-                        self.transferFeedback = TransferFeedback(
-                            message: String(localized: "Created folder \(mutation.destinationName) in Remote."),
-                            status: .completed
-                        )
                     case .failure(let error):
                         self.transferFeedback = TransferFeedback(
                             message: String(localized: "Create folder failed: \(error.localizedDescription)"),
@@ -2672,8 +2613,6 @@ final class FilePierWorkspaceState: ObservableObject {
 
         let destinationDirectoryURL = directoryURL(for: destinationPane, targetItemID: targetItemID)
         var lastCopiedItemID: BrowserItem.ID?
-        var copiedNames: [String] = []
-        var renamedNames: [String] = []
 
         for sourceURL in sourceURLs {
             let activityID = UUID()
@@ -2703,10 +2642,6 @@ final class FilePierWorkspaceState: ObservableObject {
                     )
                 )
 
-                copiedNames.append(result.destinationURL.lastPathComponent)
-                if result.renamedForConflict {
-                    renamedNames.append(result.destinationURL.lastPathComponent)
-                }
                 lastCopiedItemID = result.destinationURL.path(percentEncoded: false)
             } catch {
                 replaceTransferActivity(
@@ -2730,20 +2665,6 @@ final class FilePierWorkspaceState: ObservableObject {
             reloadDirectory(in: sourcePane, selecting: selectedItemID(for: sourcePane))
         }
         reloadDirectory(in: destinationPane, selecting: lastCopiedItemID)
-
-        if !renamedNames.isEmpty {
-            let renamedList = renamedNames.joined(separator: ", ")
-            transferFeedback = TransferFeedback(
-                message: String(localized: "Copied with renamed duplicates: \(renamedList)."),
-                status: .completed
-            )
-        } else if !copiedNames.isEmpty {
-            let summary = copiedNames.count == 1 ? copiedNames[0] : "\(copiedNames.count) items"
-            transferFeedback = TransferFeedback(
-                message: String(localized: "Copied \(summary) to \(destinationPane.title)."),
-                status: .completed
-            )
-        }
     }
 
     private func uploadLocalItems(
@@ -2798,7 +2719,6 @@ final class FilePierWorkspaceState: ObservableObject {
             defer { if startedAccess { localSecurityScopeRootURL?.stopAccessingSecurityScopedResource() } }
             var lastCopiedItemID: BrowserItem.ID?
             var copiedNames: [String] = []
-            var renamedNames: [String] = []
             var cancelledNames: [String] = []
             var failedSourceURLs: [URL] = []
             var failureMessage: String?
@@ -2874,12 +2794,9 @@ final class FilePierWorkspaceState: ObservableObject {
                 accumulationLock.unlock()
             }
 
-            func recordSuccess(name: String, renamed: Bool, itemID: BrowserItem.ID) {
+            func recordSuccess(name: String, itemID: BrowserItem.ID) {
                 accumulationLock.lock()
                 copiedNames.append(name)
-                if renamed {
-                    renamedNames.append(name)
-                }
                 lastCopiedItemID = itemID
                 accumulationLock.unlock()
                 refreshBatchActivity()
@@ -3048,7 +2965,6 @@ final class FilePierWorkspaceState: ObservableObject {
 
                         recordSuccess(
                             name: result.destinationName,
-                            renamed: result.renamedForConflict,
                             itemID: result.remoteItemID
                         )
 
@@ -3150,7 +3066,6 @@ final class FilePierWorkspaceState: ObservableObject {
                     }
                     recordSuccess(
                         name: mutation.destinationName,
-                        renamed: mutation.destinationName != directoryName,
                         itemID: mutation.remoteItemID
                     )
 
@@ -3267,25 +3182,6 @@ final class FilePierWorkspaceState: ObservableObject {
                         ? String(localized: "Upload batch completed with failures.")
                         : String(localized: "Upload failed: \(failureMessage)")
                     self.transferFeedback = TransferFeedback(message: prefix, status: .failed)
-                } else if !cancelledNames.isEmpty && copiedNames.isEmpty {
-                    let summary = cancelledNames.count == 1 ? cancelledNames[0] : "\(cancelledNames.count) items"
-                    self.transferFeedback = TransferFeedback(
-                        message: String(localized: "Cancelled upload for \(summary)."),
-                        status: .cancelled
-                    )
-                } else if !renamedNames.isEmpty {
-                    let summary = renamedNames.joined(separator: ", ")
-                    self.transferFeedback = TransferFeedback(
-                        message: String(localized: "Copied with renamed duplicates: \(summary)."),
-                        status: .completed
-                    )
-                } else if !copiedNames.isEmpty {
-                    let summary = copiedNames.count == 1 ? copiedNames[0] : "\(copiedNames.count) items"
-                    let cancelledSuffix = cancelledNames.isEmpty ? "" : " (\(cancelledNames.count) cancelled)"
-                    self.transferFeedback = TransferFeedback(
-                        message: String(localized: "Uploaded \(summary) to Remote\(cancelledSuffix)."),
-                        status: .completed
-                    )
                 }
             }
         }
@@ -3336,7 +3232,6 @@ final class FilePierWorkspaceState: ObservableObject {
             defer { if startedAccess { localAccessURL?.stopAccessingSecurityScopedResource() } }
             var lastCopiedItemID: BrowserItem.ID?
             var copiedNames: [String] = []
-            var renamedNames: [String] = []
             var cancelledNames: [String] = []
             var failedItems: [BrowserItem] = []
             var failureMessage: String?
@@ -3412,12 +3307,9 @@ final class FilePierWorkspaceState: ObservableObject {
                 accumulationLock.unlock()
             }
 
-            func recordSuccess(name: String, renamed: Bool, itemID: BrowserItem.ID) {
+            func recordSuccess(name: String, itemID: BrowserItem.ID) {
                 accumulationLock.lock()
                 copiedNames.append(name)
-                if renamed {
-                    renamedNames.append(name)
-                }
                 lastCopiedItemID = itemID
                 accumulationLock.unlock()
                 refreshBatchActivity()
@@ -3486,7 +3378,6 @@ final class FilePierWorkspaceState: ObservableObject {
                         }
                         recordSuccess(
                             name: destinationURL.lastPathComponent,
-                            renamed: destinationURL.lastPathComponent != item.name,
                             itemID: destinationURL.path(percentEncoded: false)
                         )
 
@@ -3591,7 +3482,6 @@ final class FilePierWorkspaceState: ObservableObject {
                                 )
                                 recordSuccess(
                                     name: result.destinationURL.lastPathComponent,
-                                    renamed: result.renamedForConflict,
                                     itemID: result.destinationURL.path(percentEncoded: false)
                                 )
 
@@ -3774,24 +3664,6 @@ final class FilePierWorkspaceState: ObservableObject {
                         ? String(localized: "Download batch completed with failures.")
                         : String(localized: "Download failed: \(failureMessage)")
                     self.transferFeedback = TransferFeedback(message: prefix, status: .failed)
-                } else if !cancelledNames.isEmpty && copiedNames.isEmpty {
-                    let summary = cancelledNames.count == 1 ? cancelledNames[0] : "\(cancelledNames.count) items"
-                    self.transferFeedback = TransferFeedback(
-                        message: String(localized: "Cancelled download for \(summary)."),
-                        status: .cancelled
-                    )
-                } else if !renamedNames.isEmpty {
-                    self.transferFeedback = TransferFeedback(
-                        message: String(localized: "Downloaded with renamed duplicates: \(renamedNames.joined(separator: ", "))."),
-                        status: .completed
-                    )
-                } else if !copiedNames.isEmpty {
-                    let summary = copiedNames.count == 1 ? copiedNames[0] : "\(copiedNames.count) items"
-                    let cancelledSuffix = cancelledNames.isEmpty ? "" : " (\(cancelledNames.count) cancelled)"
-                    self.transferFeedback = TransferFeedback(
-                        message: String(localized: "Downloaded \(summary) to Local\(cancelledSuffix)."),
-                        status: .completed
-                    )
                 }
             }
         }
@@ -3987,10 +3859,6 @@ final class FilePierWorkspaceState: ObservableObject {
         do {
             try localFileTransfer.deleteItem(at: sourceURL, recursively: recursively)
             reloadDirectory(in: request.pane, selecting: nil)
-            transferFeedback = TransferFeedback(
-                message: String(localized: "Deleted \(request.itemName)."),
-                status: .completed
-            )
         } catch {
             transferFeedback = TransferFeedback(
                 message: String(localized: "Delete failed: \(error.localizedDescription)"),
@@ -4025,10 +3893,6 @@ final class FilePierWorkspaceState: ObservableObject {
                 switch result {
                 case .success:
                     self.reloadRemoteDirectoryAsync(selecting: nil)
-                    self.transferFeedback = TransferFeedback(
-                        message: String(localized: "Deleted \(itemName) from Remote."),
-                        status: .completed
-                    )
                 case .failure(let error):
                     self.transferFeedback = TransferFeedback(
                         message: String(localized: "Delete failed: \(error.localizedDescription)"),
@@ -4166,7 +4030,7 @@ final class FilePierWorkspaceState: ObservableObject {
         try favoritePlaceStore.saveFavoritePlaces(records)
     }
 
-    private func resetRemoteSession(showFeedback: Bool, displayHost: String? = nil) {
+    private func resetRemoteSession(displayHost: String? = nil) {
         invalidateRemoteSessionWork()
         remoteSessionServerID = nil
         remoteClient = MockRemoteClient(
@@ -4183,12 +4047,6 @@ final class FilePierWorkspaceState: ObservableObject {
         remoteActivityCount = 0
         sessionServer = nil
         remoteSessionStatus = .idle
-        if showFeedback {
-            transferFeedback = TransferFeedback(
-                message: String(localized: "Disconnected remote session."),
-                status: .completed
-            )
-        }
     }
 
     @discardableResult
