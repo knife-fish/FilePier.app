@@ -502,7 +502,7 @@ struct FilePierTests {
             #expect(state.selectedRemoteItemID == copiedItemID)
             #expect(state.recentTransfers.first?.status == .completed)
             #expect(state.recentTransfers.first?.title == "release-notes.txt")
-            #expect(state.transferFeedback?.message.contains(sourceFileURL.lastPathComponent) == true)
+            #expect(state.transferFeedback == nil)
         }
 
         try? FileManager.default.removeItem(at: baseURL)
@@ -555,7 +555,7 @@ struct FilePierTests {
 
             #expect(state.remoteItems.contains(where: { $0.id == renamedItemID }))
             #expect(state.selectedRemoteItemID == renamedItemID)
-            #expect(state.transferFeedback?.message.contains("report 2.txt") == true)
+            #expect(state.transferFeedback == nil)
         }
 
         try? FileManager.default.removeItem(at: baseURL)
@@ -601,7 +601,7 @@ struct FilePierTests {
             #expect(copiedItem != nil)
             #expect(state.selectedRemoteItemID == copiedItem?.id)
             #expect(state.focusedPane == .remote)
-            #expect(state.transferFeedback?.message.contains(sourceFileURL.lastPathComponent) == true)
+            #expect(state.transferFeedback == nil)
         }
 
         try? FileManager.default.removeItem(at: baseURL)
@@ -763,7 +763,7 @@ struct FilePierTests {
             #expect(state.localItems.contains(where: { $0.id == downloadedItemID }))
             #expect(state.selectedLocalItemID == downloadedItemID)
             #expect(state.focusedPane == .local)
-            #expect(state.transferFeedback?.message.contains("server.log") == true)
+            #expect(state.transferFeedback == nil)
         }
 
         try? FileManager.default.removeItem(at: baseURL)
@@ -910,8 +910,7 @@ struct FilePierTests {
 
             #expect(state.localItems.contains(where: { $0.id == renamedItemID }))
             #expect(state.selectedLocalItemID == renamedItemID)
-            #expect(state.transferFeedback?.message.contains("draft.txt") == true)
-            #expect(state.transferFeedback?.message.contains("published.txt") == true)
+            #expect(state.transferFeedback == nil)
         }
 
         try? FileManager.default.removeItem(at: baseURL)
@@ -956,8 +955,7 @@ struct FilePierTests {
 
             #expect(state.remoteItems.contains(where: { $0.id == renamedItemID }))
             #expect(state.selectedRemoteItemID == renamedItemID)
-            #expect(state.transferFeedback?.message.contains("draft.txt") == true)
-            #expect(state.transferFeedback?.message.contains("published.txt") == true)
+            #expect(state.transferFeedback == nil)
         }
 
         try? FileManager.default.removeItem(at: baseURL)
@@ -989,7 +987,7 @@ struct FilePierTests {
             state.confirmDeleteRequest()
 
             #expect(!state.localItems.contains(where: { $0.id == sourceFileURL.path(percentEncoded: false) }))
-            #expect(state.transferFeedback?.message.contains("obsolete.txt") == true)
+            #expect(state.transferFeedback == nil)
         }
 
         try? FileManager.default.removeItem(at: baseURL)
@@ -1030,7 +1028,7 @@ struct FilePierTests {
 
         try await MainActor.run {
             #expect(!state.remoteItems.contains(where: { $0.id == sourceFileURL.path(percentEncoded: false) }))
-            #expect(state.transferFeedback?.message.contains("obsolete.txt") == true)
+            #expect(state.transferFeedback == nil)
         }
 
         try? FileManager.default.removeItem(at: baseURL)
@@ -1117,7 +1115,7 @@ struct FilePierTests {
 
         try await MainActor.run {
             #expect(state.nonEmptyFolderDeleteRequest == nil)
-            #expect(state.transferFeedback?.message.contains("Archive") == true)
+            #expect(state.transferFeedback == nil)
         }
 
         try? FileManager.default.removeItem(at: baseURL)
@@ -1151,7 +1149,7 @@ struct FilePierTests {
 
             #expect(state.localItems.contains(where: { $0.id == folderID }))
             #expect(state.selectedLocalItemID == folderID)
-            #expect(state.transferFeedback?.message.contains("Archives") == true)
+            #expect(state.transferFeedback == nil)
         }
 
         try? FileManager.default.removeItem(at: baseURL)
@@ -1196,7 +1194,7 @@ struct FilePierTests {
 
             #expect(folder != nil)
             #expect(state.selectedRemoteItemID == folder?.id)
-            #expect(state.transferFeedback?.message.contains("Releases") == true)
+            #expect(state.transferFeedback == nil)
         }
 
         try? FileManager.default.removeItem(at: baseURL)
@@ -1311,7 +1309,14 @@ struct FilePierTests {
             state.selectServer(server)
             state.connectionDraft.host = "sftp.example.com"
             state.connectionDraft.username = "release"
+            state.remoteSessionStatus = .failed("Previous connection failure")
+            state.remoteErrorMessage = "Previous connection failure"
+            state.transferFeedback = TransferFeedback(message: "Previous connection failure", status: .failed)
             state.connectRemoteSession()
+
+            #expect(state.remoteSessionStatus == .connecting)
+            #expect(state.remoteErrorMessage == nil)
+            #expect(state.transferFeedback == nil)
         }
 
         try await eventually {
@@ -1326,10 +1331,54 @@ struct FilePierTests {
             #expect(state.remotePathDisplayName.hasPrefix("sftp://sftp.example.com"))
             #expect(state.remoteSessionStatus == .connected("release@sftp.example.com"))
             #expect(!state.remoteItems.isEmpty)
-            #expect(state.transferFeedback?.message.contains("Production SFTP") == true)
+            #expect(state.transferFeedback == nil)
         }
 
         try? FileManager.default.removeItem(at: baseURL)
+    }
+
+    @Test func reconnectClearsPreviousErrorAndReportsNewFailure() async throws {
+        let baseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let localURL = baseURL.appendingPathComponent("Local", isDirectory: true)
+        let missingRemoteURL = baseURL.appendingPathComponent("MissingRemote", isDirectory: true)
+        try FileManager.default.createDirectory(at: localURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: baseURL) }
+
+        let state = await MainActor.run {
+            FilePierWorkspaceState(
+                localFileBrowser: LocalFileBrowserService(),
+                remoteClientFactory: { _, _, _ in
+                    RemoteSessionServices(client: TestRemoteClient(remoteRootURL: missingRemoteURL))
+                },
+                localFileTransfer: LocalFileTransferService(),
+                initialLocalDirectoryURL: localURL,
+                initialRemoteDirectoryURL: missingRemoteURL
+            )
+        }
+
+        await MainActor.run {
+            state.remoteSessionStatus = .failed("Previous connection failure")
+            state.remoteErrorMessage = "Previous connection failure"
+            state.transferFeedback = TransferFeedback(message: "Previous connection failure", status: .failed)
+            state.connectRemoteSession()
+
+            #expect(state.remoteSessionStatus == .connecting)
+            #expect(state.remoteErrorMessage == nil)
+            #expect(state.transferFeedback == nil)
+        }
+
+        try await eventually {
+            if case .failed = state.remoteSessionStatus { return true }
+            return false
+        }
+
+        await MainActor.run {
+            #expect(state.remoteErrorMessage != nil)
+            #expect(state.remoteErrorMessage != "Previous connection failure")
+            #expect(state.transferFeedback?.status == .failed)
+            #expect(state.transferFeedback?.message != "Previous connection failure")
+        }
     }
 
     @Test func saveConnectionDraftPersistsServersAndPassword() async throws {
@@ -1787,7 +1836,7 @@ struct FilePierTests {
 
             #expect(!state.servers.contains(where: { $0.id == savedServer.id }))
             #expect(state.remoteSessionStatus == .idle)
-            #expect(state.transferFeedback?.message.contains("Delete Me") == true)
+            #expect(state.transferFeedback == nil)
         }
 
         let reloadedServers = try savedServerStore.loadServers()
@@ -1895,7 +1944,7 @@ struct FilePierTests {
             #expect(state.connectionDraft.clearsSavedPassword)
 
             _ = state.saveConnectionDraftAsSite()
-            #expect(state.transferFeedback?.message.contains("Password Reset") == true)
+            #expect(state.transferFeedback == nil)
         }
 
         #expect(try credentialStore.password(for: savedServer.id) == nil)
@@ -2288,7 +2337,7 @@ struct FilePierTests {
 
         try await MainActor.run {
             #expect(accepted)
-            #expect(state.transferFeedback?.message.contains("archive.bin") == true)
+            #expect(state.transferFeedback == nil)
         }
 
         try? FileManager.default.removeItem(at: baseURL)
@@ -2704,6 +2753,8 @@ struct FilePierTests {
 
         await MainActor.run {
             #expect(state.canRetryTransferActivity(activityID))
+            #expect(state.transferFeedback?.status == .failed)
+            state.dismissTransferFeedback()
             state.retryTransferActivity(activityID)
         }
 
@@ -2714,7 +2765,7 @@ struct FilePierTests {
         }
 
         try await MainActor.run {
-            #expect(state.transferFeedback?.message.contains("retry-me.txt") == true)
+            #expect(state.transferFeedback == nil)
         }
 
         try? FileManager.default.removeItem(at: baseURL)
@@ -3162,7 +3213,7 @@ struct FilePierTests {
         }
 
         try await MainActor.run {
-            #expect(state.transferFeedback?.message.contains("pause-me.bin") == true)
+            #expect(state.transferFeedback == nil)
         }
 
         try? FileManager.default.removeItem(at: baseURL)
