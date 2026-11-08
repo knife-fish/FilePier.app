@@ -113,22 +113,6 @@
         }
       }
     },
-    "%@ is already in Favorites." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ is already in Favorites."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ 已经在收藏夹中。"
-          }
-        }
-      }
-    },
     "%@ is not empty. Delete this folder and everything inside it?" : {
       "localizations" : {
         "en" : {
@@ -474,22 +458,6 @@
         }
       }
     },
-    "Added %@ to Favorites." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Added %1$@ to Favorites."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已将 %1$@ 添加到收藏夹。"
-          }
-        }
-      }
-    },
     "Addressing" : {
       "localizations" : {
         "en" : {
@@ -665,38 +633,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在传输开始前已取消。"
-          }
-        }
-      }
-    },
-    "Cancelled download for %@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cancelled download for %1$@."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已取消下载 %1$@。"
-          }
-        }
-      }
-    },
-    "Cancelled upload for %@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cancelled upload for %1$@."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已取消上传 %1$@。"
           }
         }
       }
@@ -1176,22 +1112,6 @@
         }
       }
     },
-    "Connected to %@ via %@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connected to %1$@ via %2$@."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已通过 %2$@ 连接到 %1$@。"
-          }
-        }
-      }
-    },
     "Connecting" : {
       "localizations" : {
         "en" : {
@@ -1273,22 +1193,6 @@
         }
       }
     },
-    "Copied %@ to %@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copied %1$@ to %2$@."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已将 %1$@ 复制到 %2$@。"
-          }
-        }
-      }
-    },
     "Copied from %@ to %@" : {
       "localizations" : {
         "en" : {
@@ -1333,38 +1237,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "复制的站点"
-          }
-        }
-      }
-    },
-    "Copied site %@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copied site %@."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已复制站点 %@。"
-          }
-        }
-      }
-    },
-    "Copied with renamed duplicates: %@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copied with renamed duplicates: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "复制完成，重复项已重命名：%@"
           }
         }
       }
@@ -1541,38 +1413,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "使用当前名称创建文件夹。"
-          }
-        }
-      }
-    },
-    "Created folder %@ in Local." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Created folder %1$@ in Local."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已在本地创建文件夹 %1$@。"
-          }
-        }
-      }
-    },
-    "Created folder %@ in Remote." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Created folder %1$@ in Remote."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已在远程创建文件夹 %1$@。"
           }
         }
       }
@@ -1869,54 +1709,6 @@
         }
       }
     },
-    "Deleted %@ from Remote." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deleted %1$@ from Remote."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已从远程删除 %1$@。"
-          }
-        }
-      }
-    },
-    "Deleted %@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deleted %1$@."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已删除 %1$@。"
-          }
-        }
-      }
-    },
-    "Deleted site %@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deleted site %1$@."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已删除站点 %1$@。"
-          }
-        }
-      }
-    },
     "Descending" : {
       "localizations" : {
         "en" : {
@@ -1961,22 +1753,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "断开连接"
-          }
-        }
-      }
-    },
-    "Disconnected remote session." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Disconnected remote session."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "远程会话已断开。"
           }
         }
       }
@@ -2138,38 +1914,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下载到本地"
-          }
-        }
-      }
-    },
-    "Downloaded %@ to Local%@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Downloaded %1$@ to Local%2$@."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已下载 %1$@ 到本地%2$@。"
-          }
-        }
-      }
-    },
-    "Downloaded with renamed duplicates: %@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Downloaded with renamed duplicates: %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下载完成，重复项已重命名：%@"
           }
         }
       }
@@ -3112,22 +2856,6 @@
         }
       }
     },
-    "Opened %@ in Local." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opened %1$@ in Local."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已在本地打开 %1$@。"
-          }
-        }
-      }
-    },
     "Optional label used in the site list." : {
       "localizations" : {
         "en" : {
@@ -3658,22 +3386,6 @@
         }
       }
     },
-    "Recent transfers are shown in the inspector." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recent transfers are shown in the inspector."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近的传输会显示在检查器中。"
-          }
-        }
-      }
-    },
     "Refresh" : {
       "localizations" : {
         "en" : {
@@ -3924,22 +3636,6 @@
     "Remove the stored secret key for this saved S3 site from Keychain." : {
 
     },
-    "Removed %@ from Favorites." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Removed %1$@ from Favorites."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已将 %1$@ 从收藏夹中移除。"
-          }
-        }
-      }
-    },
     "Rename" : {
       "localizations" : {
         "en" : {
@@ -4016,54 +3712,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重命名项目"
-          }
-        }
-      }
-    },
-    "Renamed %@ to %@ on Remote." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Renamed %1$@ to %2$@ on Remote."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已在远程将 %1$@ 重命名为 %2$@。"
-          }
-        }
-      }
-    },
-    "Renamed %@ to %@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Renamed %1$@ to %2$@."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已将 %1$@ 重命名为 %2$@。"
-          }
-        }
-      }
-    },
-    "Renamed favorite to %@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Renamed favorite to %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已将收藏重命名为 %@"
           }
         }
       }
@@ -4412,22 +4060,6 @@
     },
     "Saved secret key will be removed when you save this site." : {
 
-    },
-    "Saved site %@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Saved site %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已保存站点 %@"
-          }
-        }
-      }
     },
     "Saved site configuration" : {
       "localizations" : {
@@ -4791,22 +4423,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "排序"
-          }
-        }
-      }
-    },
-    "SSH and connection settings are managed from site configuration." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SSH and connection settings are managed from site configuration."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SSH 和连接设置可在站点配置中管理。"
           }
         }
       }
@@ -5429,22 +5045,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上传到远程"
-          }
-        }
-      }
-    },
-    "Uploaded %@ to Remote%@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Uploaded %1$@ to Remote%2$@."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已上传 %1$@ 到远程%2$@。"
           }
         }
       }
